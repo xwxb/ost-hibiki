@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OST Showcase · Alpha v6 (Final)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+  
+  <style>
+    /* =========================================
+       Base & Variables
+       ========================================= */
+    :root {
+      --bg-ambient: url('https://files.seeusercontent.com/2026/03/04/Of3m/a0fc402.jpg');
+      --trans-layout: 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+      --trans-fade: 0.5s ease;
+    }
+
+    body {
+      margin: 0;
+      background: #020203; /* 更深邃的底色 */
+      color: rgba(255, 255, 255, 0.9);
+      font-family: "Noto Sans JP", -apple-system, sans-serif;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .font-en { font-family: "Kanit", sans-serif; }
+
+    /* =========================================
+       Background & Avee Player Visualizer Engine
+       ========================================= */
+    #global-ambient {
+      position: fixed; inset: -10%; z-index: -10;
+      background-image: var(--bg-ambient);
+      background-size: cover; background-position: center;
+      /* 背景压暗，留出光影对比度 */
+      filter: blur(70px) brightness(0.12) saturate(1.4);
+      transition: background-image 1.5s ease;
+      transform: scale(1.1);
+    }
+
+    /* 核心视觉：巨型声波律动环 (Avee Player 风格) */
+    .avee-ring {
+      position: fixed;
+      top: 50%; left: 50%;
+      width: 40vh; height: 40vh; /* 初始圆周 */
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.8);
+      transform: translate(-50%, -50%) scale(0.5);
+      opacity: 0; pointer-events: none; z-index: -5;
+      box-shadow: 0 0 30px rgba(255,255,255,0.4), inset 0 0 30px rgba(255,255,255,0.4);
+    }
+
+    /* 播放态：激活声波扩散 */
+    .is-playing .avee-ring { animation: aveeBeat 2s cubic-bezier(0.1, 0.8, 0.3, 1) infinite; }
+    .is-playing .avee-ring.delay-1 { animation-delay: 0.5s; }
+    .is-playing .avee-ring.delay-2 { animation-delay: 1.0s; }
+    .is-playing .avee-ring.delay-3 { animation-delay: 1.5s; }
+
+    @keyframes aveeBeat {
+      0% { transform: translate(-50%, -50%) scale(0.6); opacity: 1; border-width: 5px; }
+      100% { transform: translate(-50%, -50%) scale(4); opacity: 0; border-width: 1px; }
+    }
+
+    /* 底部呼吸柔光 */
+    .center-glow {
+      position: fixed; top: 50%; left: 50%; width: 70vw; height: 70vw;
+      border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 60%);
+      transform: translate(-50%, -50%); opacity: 0; z-index: -6; pointer-events: none;
+    }
+    .is-playing .center-glow { animation: pulseGlow 2s alternate infinite ease-in-out; }
+    @keyframes pulseGlow { 0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.5; } 100% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; filter: brightness(1.5); } }
+    
+    .film-grain {
+      position: fixed; inset: 0; z-index: -8; pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+    }
+
+    /* =========================================
+       Layout Engine 
+       ========================================= */
+    #app {
+      display: flex; width: 100vw; height: 100vh;
+      box-sizing: border-box; transition: padding var(--trans-layout), gap var(--trans-layout);
+      position: relative;
+    }
+
+    .mode-preview #app { padding: 40px 6vw; gap: 4vw; align-items: center; justify-content: center; }
+    .mode-immersive #app { padding: 0; gap: 0; align-items: center; justify-content: center; }
+
+    /* =========================================
+       Left Column: Art Canvas
+       ========================================= */
+    .art-col {
+      flex: 1 1 auto; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; height: 100%;
+      position: relative; transition: width var(--trans-layout);
+    }
+    .mode-immersive .art-col { width: 100vw; flex: none; }
+
+    .art-canvas {
+      position: relative; width: 100%; aspect-ratio: 16 / 9;
+      background: transparent; overflow: hidden;
+      transition: max-height var(--trans-layout), max-width var(--trans-layout), border-radius var(--trans-layout), transform var(--trans-layout), box-shadow var(--trans-layout), margin var(--trans-layout);
+    }
+
+    /* 预览模式画框 */
+    .mode-preview .art-canvas {
+      max-width: 900px; max-height: 68vh; border-radius: 16px;
+      cursor: pointer; box-shadow: 0 30px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.05);
+    }
+    .mode-preview .art-canvas:hover {
+      transform: translateY(-4px) scale(1.01);
+      box-shadow: 0 40px 90px rgba(0,0,0,0.9), 0 0 0 1px rgba(255,255,255,0.1);
+    }
+
+    /* 沉浸模式画框 (退回更加克制的尺寸，绝不挡UI，并给背景律动留出巨大空间) */
+    .mode-immersive .art-canvas {
+      max-width: 70vw;  /* 更小的占比 */
+      max-height: 60vh; /* 更小的占比 */
+      border-radius: 12px;
+      margin-bottom: 4vh; 
+      cursor: default;
+      box-shadow: 0 40px 100px rgba(0,0,0,0.9), 0 0 0 1px rgba(255,255,255,0.08);
+    }
+
+    /* =========================================
+       Image Layering
+       ========================================= */
+    .frame-layer {
+      position: absolute; inset: 0; opacity: 0; visibility: hidden;
+      transition: opacity 1.2s ease, visibility 1.2s; pointer-events: none;
+    }
+    .frame-layer.active { opacity: 1; visibility: visible; pointer-events: auto; }
+
+    .frame-layer .img-bg {
+      position: absolute; inset: -10%; width: 120%; height: 120%;
+      object-fit: cover; filter: blur(30px) brightness(0.4); opacity: 0.9;
+    }
+    .frame-layer .img-fg {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      object-fit: contain; transform: scale(1.02); will-change: transform;
+    }
+    .mode-immersive.is-playing .frame-layer.active .img-fg { transition: transform 18s linear; transform: scale(1); }
+
+    /* Hover Hint (仅预览模式显示的播放玻璃态) */
+    .hover-expand-overlay {
+      position: absolute; inset: 0; background: rgba(0,0,0,0.15); display: flex;
+      align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s ease; z-index: 10;
+    }
+    .mode-preview .art-canvas:hover .hover-expand-overlay { opacity: 1; }
+    .mode-immersive .hover-expand-overlay { display: none !important; }
+
+    .glass-play-btn {
+      width: 76px; height: 76px; border-radius: 50%;
+      background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.25); color: white;
+      transition: transform 0.2s, background 0.2s; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+    .glass-play-btn svg { margin-left: 4px; } 
+    .art-canvas:hover .glass-play-btn { transform: scale(1.05); background: rgba(255, 255, 255, 0.2); }
+
+    /* Dots Indicator */
+    .dots-container {
+      display: flex; gap: 10px; margin-top: 24px; opacity: 1; transition: opacity var(--trans-fade);
+    }
+    .mode-immersive .dots-container { opacity: 0; pointer-events: none; position: absolute; }
+    .dot {
+      width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.2);
+      transition: all 0.3s ease; cursor: pointer; position: relative;
+    }
+    .dot::after { content: ''; position: absolute; inset: -6px; }
+    .dot:hover { background: rgba(255,255,255,0.5); transform: scale(1.2); }
+    .dot.active { background: rgba(255,255,255,0.9); transform: scale(1.4); }
+
+    /* =========================================
+       Right Column: Info Panel
+       ========================================= */
+    .info-col {
+      flex: 0 0 380px; display: flex; flex-direction: column; justify-content: center;
+      opacity: 1; transform: translateX(0); transition: opacity 0.4s ease, transform var(--trans-layout);
+    }
+    .mode-immersive .info-col { position: absolute; right: -400px; opacity: 0; pointer-events: none; }
+
+    .tag {
+      padding: 4px 12px; border-radius: 99px; font-size: 11px; letter-spacing: 0.05em;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.7);
+    }
+
+    .main-play-btn {
+      display: flex; align-items: center; gap: 10px; padding: 12px 28px; border-radius: 99px;
+      background: #fff; color: #000; font-weight: 600; font-size: 14px; transition: transform 0.2s, opacity 0.2s;
+    }
+    .main-play-btn:hover { transform: scale(1.03); opacity: 0.9; }
+
+    .btn-secondary {
+      display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 99px;
+      background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+      color: #fff; font-size: 13px; font-weight: 500; transition: background 0.2s, transform 0.2s;
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,0.15); transform: scale(1.03); }
+
+    /* =========================================
+       Copyright & Popover Debug Panel
+       ========================================= */
+    .copyright-area {
+      position: relative; /* 核心锚点：为下方的 Popover 定位 */
+      margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 11px; line-height: 1.6; color: rgba(255,255,255,0.35);
+    }
+    .copyright-area a { transition: color 0.2s; }
+    .copyright-area a:hover { color: rgba(255,255,255,0.8); }
+
+    /* 【解决方案】绝对定位的 Popover 悬浮舱，彻底防止布局被撑起跳动 */
+    .debug-popover {
+      position: absolute;
+      top: calc(100% + 12px); /* 悬浮在 copyright 下方 */
+      left: 0; right: 0;
+      background: rgba(18, 18, 22, 0.95);
+      backdrop-filter: blur(25px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+      z-index: 100;
+      /* 动画与状态 */
+      opacity: 0; visibility: hidden; transform: translateY(-10px);
+      transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .debug-popover.open {
+      opacity: 1; visibility: visible; transform: translateY(0);
+    }
+
+    /* Custom Dropdown */
+    .custom-select-wrapper { position: relative; width: 100%; margin-bottom: 12px; }
+    .select-trigger {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px; font-size: 12px; color: rgba(255,255,255,0.8); cursor: pointer; transition: background 0.2s;
+    }
+    .select-trigger:hover { background: rgba(255,255,255,0.1); }
+    .select-options {
+      position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px;
+      background: rgba(30,30,35,0.98); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px; overflow: hidden; opacity: 0; pointer-events: none;
+      transform: translateY(-4px); transition: all 0.2s; z-index: 20;
+    }
+    .custom-select-wrapper.open .select-options { opacity: 1; pointer-events: auto; transform: translateY(0); }
+    .select-option { padding: 10px 14px; font-size: 12px; color: rgba(255,255,255,0.6); cursor: pointer; transition: all 0.2s; }
+    .select-option:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .select-option.active { color: #fff; background: rgba(255,255,255,0.15); }
+
+    /* =========================================
+       Immersive Mode Controls
+       ========================================= */
+    .imm-ui {
+      position: fixed; left: 0; right: 0; z-index: 50;
+      display: flex; align-items: center; padding: 4vh 4vw; opacity: 0; visibility: hidden;
+      transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0.6s;
+    }
+    .mode-immersive .imm-ui { opacity: 1; visibility: visible; pointer-events: auto; }
+    .mode-immersive.is-idle .imm-ui { opacity: 0; pointer-events: none; }
+
+    .imm-top { top: 0; transform: translateY(-20px); background: linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, transparent 100%); justify-content: space-between; }
+    .mode-immersive .imm-top { transform: translateY(0); }
+    .mode-immersive.is-idle .imm-top { transform: translateY(-20px); }
+
+    .imm-bottom { bottom: 0; transform: translateY(20px); background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%); justify-content: center; padding-bottom: 5vh; }
+    .mode-immersive .imm-bottom { transform: translateY(0); }
+    .mode-immersive.is-idle .imm-bottom { transform: translateY(20px); }
+
+    .icon-btn {
+      width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      color: rgba(255,255,255,0.7); background: transparent; transition: all 0.2s; cursor: pointer;
+    }
+    .icon-btn:hover { color: #fff; background: rgba(255,255,255,0.1); }
+
+    /* Visualizer EQ Bars */
+    .eq-visualizer { display: flex; gap: 3px; align-items: flex-end; height: 16px; margin: 0 20px; }
+    .eq-bar { width: 3px; background: rgba(255,255,255,0.8); border-radius: 2px; transition: height 0.3s ease; height: 3px; }
+    .is-playing .eq-bar { animation: eq 0.8s infinite alternate ease-in-out; }
+    .is-playing .eq-bar:nth-child(1) { animation-delay: 0.0s; height: 60%; }
+    .is-playing .eq-bar:nth-child(2) { animation-delay: 0.2s; height: 100%; }
+    .is-playing .eq-bar:nth-child(3) { animation-delay: 0.4s; height: 40%; }
+    .is-playing .eq-bar:nth-child(4) { animation-delay: 0.1s; height: 80%; }
+    .is-playing .eq-bar:nth-child(5) { animation-delay: 0.3s; height: 50%; }
+    @keyframes eq { 0% { height: 20%; } 100% { height: 100%; } }
+
+    .player-pill {
+      display: flex; align-items: center; padding: 8px 16px; border-radius: 99px;
+      background: rgba(20, 20, 22, 0.4); backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    }
+    .player-pill .icon-btn.primary { color: #000; background: #fff; width: 44px; height: 44px; }
+    .player-pill .icon-btn.primary:hover { transform: scale(1.05); }
+  </style>
+</head>
+<body class="mode-preview" id="bodyWrap">
+
+  <!-- Ambient Background & Avee Player Visualizer -->
+  <div id="global-ambient"></div>
+  <div class="center-glow"></div>
+  <!-- Sonic Rings -->
+  <div class="avee-ring"></div>
+  <div class="avee-ring delay-1"></div>
+  <div class="avee-ring delay-2"></div>
+  <div class="avee-ring delay-3"></div>
+  <div class="film-grain"></div>
+
+  <!-- Top Bar (Immersive) -->
+  <header class="imm-ui imm-top">
+    <button id="btn-exit" class="icon-btn" title="Exit Immersive">
+      <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+    </button>
+    <div class="text-center">
+      <div class="font-en text-[1.1rem] font-semibold tracking-wide text-white" id="imm-title"></div>
+      <div class="mt-1 text-xs text-white/60 tracking-wider" id="imm-sub"></div>
+    </div>
+    <div style="width: 44px;"></div>
+  </header>
+
+  <!-- Main Layout -->
+  <div id="app">
+    <!-- Left: Canvas -->
+    <section class="art-col">
+      <div class="art-canvas" id="canvas-trigger">
+        <div id="layer-A" class="frame-layer active"><img class="img-bg" src="" alt="bg"/><img class="img-fg" src="" alt="fg"/></div>
+        <div id="layer-B" class="frame-layer"><img class="img-bg" src="" alt="bg"/><img class="img-fg" src="" alt="fg"/></div>
+        
+        <!-- Hover Hint (Play Icon only) -->
+        <div class="hover-expand-overlay">
+          <div class="glass-play-btn">
+             <svg class="play-state-icon" viewBox="0 0 24 24" width="34" height="34" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </div>
+        </div>
+      </div>
+      
+      <div class="dots-container" id="dots-wrap"></div>
+    </section>
+
+    <!-- Right: Info Panel -->
+    <section class="info-col">
+      <h1 class="font-en text-[2.5rem] font-bold leading-[1.1] tracking-wide text-white" id="info-title"></h1>
+      <p class="mt-3 text-[15px] leading-relaxed text-white/60" id="info-sub"></p>
+      
+      <div class="mt-6 flex flex-wrap gap-2" id="info-tags"></div>
+      
+      <div class="mt-8 text-sm">
+        <span class="text-[10px] uppercase tracking-widest text-white/40 mr-3">Composer</span>
+        <span class="font-medium text-white/80" id="info-composer"></span>
+      </div>
+
+      <div class="mt-8 flex flex-wrap items-center gap-3 relative">
+        <button id="btn-main-play" class="main-play-btn">
+          <svg class="play-state-icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <span id="main-play-text">Play Track</span>
+        </button>
+        <button id="btn-enter-imm" class="btn-secondary">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+          Immersive
+        </button>
+        
+        <!-- Bilibili 提示语 -->
+        <div id="bili-hint" class="absolute -top-6 left-2 text-[10px] text-red-400/80 tracking-wide hidden">
+          * 监测到 Bilibili 源，请在底部 Debug 面板手动点击播放
+        </div>
+      </div>
+
+      <!-- Copyright & Source Manager Area -->
+      <div class="copyright-area">
+        <p>本项目为非营利性质，所有版权归原作者所有。</p>
+        <p class="mt-1">侵权删改联系: <a href="mailto:i@045510.xyz">i@045510.xyz</a></p>
+        
+        <div class="mt-5 flex items-center justify-between">
+          <a id="yt-source-link" href="#" target="_blank" class="inline-flex items-center gap-1.5 font-medium text-white/40 hover:text-white">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M21.582 6.186a2.635 2.635 0 0 0-1.85-1.87C18.096 3.88 12 3.88 12 3.88s-6.096 0-7.732.436a2.635 2.635 0 0 0-1.85 1.87C2 7.842 2 12 2 12s0 4.158.418 5.814a2.635 2.635 0 0 0 1.85 1.87C5.904 20.12 12 20.12 12 20.12s6.096 0 7.732-.436a2.635 2.635 0 0 0 1.85-1.87C22 16.158 22 12 22 12s0-4.158-.418-5.814zM9.912 15.176v-6.352l5.776 3.176-5.776 3.176z"/></svg>
+            Original Source
+          </a>
+          
+          <button id="btn-toggle-ext" class="text-[10px] font-semibold uppercase tracking-widest text-white/30 transition-colors hover:text-white">
+            Sources & Debug
+          </button>
+        </div>
+
+        <!-- 绝对定位的 Popover Debug 悬浮舱 (不再撑破页面) -->
+        <div id="ext-container" class="debug-popover">
+           <div class="custom-select-wrapper" id="sourceSelector">
+             <div class="select-trigger" id="sourceTrigger">
+               <span id="selectedSourceName">YouTube Engine (Default)</span>
+               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+             </div>
+             <div class="select-options">
+               <div class="select-option active" data-value="youtube">YouTube Engine</div>
+               <div class="select-option" data-value="bilibili">Bilibili Engine</div>
+             </div>
+           </div>
+           
+           <div id="player-wrapper" class="h-[160px] w-full rounded-xl border border-white/10 bg-black/50 overflow-hidden relative">
+             <!-- Players inject here -->
+           </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Bottom Bar (Immersive) -->
+  <footer class="imm-ui imm-bottom">
+    <div class="player-pill">
+      <button id="btn-imm-play" class="icon-btn primary">
+        <svg class="play-state-icon" viewBox="0 0 24 24" width="22" height="22" fill="currentColor" style="margin-left: 2px;"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <div class="eq-visualizer">
+        <div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div><div class="eq-bar"></div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // --- Data Source ---
+    const song = {
+      title: "Way of leaving (feat.o.j.o)",
+      subtitle: "TVアニメ「【推しの子】」 オリジナルサウンドトラックVol.3",
+      tags: ["推しの子", "OST", "Emotional", "Piano"],
+      sources: {
+        youtube: "A4DaX1w7zPs", 
+        bilibili: "BV1L3ADzfERa" 
+      },
+      images: [
+        "https://files.seeusercontent.com/2026/03/04/Of3m/a0fc402.jpg",
+        "https://lsky.ry.mk/i/2026/02/26/c26cfcfa76502.webp",
+        "https://pub-141831e61e69445289222976a15b6fb3.r2.dev/Image_to_url_V2/-----imagetourl.cloud-1772422628953-yldnge.png"
+      ],
+      composer: "伊賀拓郎"
+    };
+
+    const state = { mode: 'preview', playing: false, currentFrame: 0, source: 'youtube' };
+    let ytPlayer = null, ytReady = false, autoTimer = null, idleTimer = null, activeLayerId = 'layer-A';
+    const SVG_PLAY = "M8 5v14l11-7z", SVG_PAUSE = "M6 19h4V5H6v14zm8-14v14h4V5h-4z", AUTO_MS = 6500;
+
+    const bodyWrap = document.getElementById('bodyWrap');
+    const globalAmbient = document.getElementById('global-ambient');
+    const playerWrapper = document.getElementById('player-wrapper');
+
+    // --- Boot ---
+    function initUI() {
+      document.getElementById('info-title').textContent = song.title;
+      document.getElementById('imm-title').textContent = song.title;
+      document.getElementById('info-sub').textContent = song.subtitle;
+      document.getElementById('imm-sub').textContent = song.subtitle;
+      document.getElementById('info-composer').textContent = song.composer;
+      document.getElementById('info-tags').innerHTML = song.tags.map(t => `<span class="tag">${t}</span>`).join('');
+      document.getElementById('yt-source-link').href = `https://www.youtube.com/watch?v=${song.sources.youtube}`;
+      
+      renderDots();
+      loadFrame(0, true);
+      loadPlayerEngine('youtube'); 
+      initCustomSelect();
+    }
+
+    // --- Custom Select Menu ---
+    function initCustomSelect() {
+      const sourceSelector = document.getElementById('sourceSelector');
+      const selectOptions = document.querySelectorAll('.select-option');
+      
+      document.getElementById('sourceTrigger').addEventListener('click', (e) => {
+        e.stopPropagation(); sourceSelector.classList.toggle('open');
+      });
+      document.addEventListener('click', () => sourceSelector.classList.remove('open'));
+
+      selectOptions.forEach(opt => {
+        opt.addEventListener('click', (e) => {
+          const val = e.target.dataset.value;
+          document.getElementById('selectedSourceName').textContent = e.target.textContent;
+          selectOptions.forEach(o => o.classList.remove('active'));
+          e.target.classList.add('active');
+          loadPlayerEngine(val);
+        });
+      });
+    }
+
+    // --- Frame Engine ---
+    function renderDots() {
+      const wrap = document.getElementById('dots-wrap');
+      if(!wrap) return;
+      wrap.innerHTML = song.images.map((_, i) => `<div class="dot ${i === state.currentFrame ? 'active' : ''}" data-index="${i}"></div>`).join('');
+      document.querySelectorAll('.dot').forEach(dot => {
+        dot.addEventListener('click', (e) => {
+          if (state.mode === 'preview') loadFrame(parseInt(e.target.dataset.index));
+        });
+      });
+    }
+
+    function loadFrame(index, initial = false) {
+      if(index < 0) index = song.images.length - 1;
+      if(index >= song.images.length) index = 0;
+      state.currentFrame = index;
+      
+      const url = song.images[index];
+      const nextLayerId = activeLayerId === 'layer-A' ? 'layer-B' : 'layer-A';
+      const nextLayer = document.getElementById(nextLayerId);
+
+      const img = new Image();
+      img.onload = () => {
+        nextLayer.querySelector('.img-bg').src = url; nextLayer.querySelector('.img-fg').src = url;
+        if(!initial) document.getElementById(activeLayerId).classList.remove('active');
+        nextLayer.classList.add('active');
+        globalAmbient.style.backgroundImage = `url("${url}")`;
+        activeLayerId = nextLayerId;
+        renderDots();
+      };
+      img.src = url;
+    }
+
+    // --- Universal Player Engine ---
+    function loadPlayerEngine(src) {
+      state.source = src;
+      if(state.playing) { state.playing = false; syncPlayUI(); }
+      
+      // Cleanup
+      if(ytPlayer && typeof ytPlayer.destroy === 'function') {
+        ytPlayer.destroy(); ytPlayer = null; ytReady = false;
+      }
+      playerWrapper.innerHTML = ''; 
+      
+      // Update Bilibili hint UI visibility based on source
+      document.getElementById('bili-hint').classList.add('hidden');
+
+      if(src === 'youtube') {
+        playerWrapper.innerHTML = '<div id="yt-node"></div>';
+        const initYT = () => {
+          ytPlayer = new YT.Player('yt-node', {
+            videoId: song.sources.youtube,
+            playerVars: { playsinline: 1, rel: 0, controls: 1 }, 
+            events: {
+              onReady: () => { ytReady = true; },
+              onStateChange: (e) => {
+                state.playing = (e.data === YT.PlayerState.PLAYING);
+                syncPlayUI();
+              }
+            }
+          });
+        };
+        if (!window.YT) {
+          const tag = document.createElement('script'); tag.src = "https://www.youtube.com/iframe_api";
+          document.head.appendChild(tag); window.onYouTubeIframeAPIReady = initYT;
+        } else { initYT(); }
+      } 
+      else if(src === 'bilibili') {
+        playerWrapper.innerHTML = `<iframe id="bili-frame" src="//player.bilibili.com/player.html?bvid=${song.sources.bilibili}&page=1&high_quality=1&danmaku=0" width="100%" height="100%" frameborder="0" scrolling="no" allowfullscreen="true"></iframe>`;
+      }
+    }
+
+    function togglePlay(forcePlay = false) {
+      if(state.source === 'youtube') {
+        if(!ytReady || !ytPlayer) return;
+        if(forcePlay) ytPlayer.playVideo();
+        else if(state.playing) ytPlayer.pauseVideo();
+        else ytPlayer.playVideo();
+      } 
+      else if(state.source === 'bilibili') {
+        // UI欺骗逻辑：直接给播放反馈，并强行开启悬浮舱让你手动点
+        if(forcePlay) state.playing = true;
+        else state.playing = !state.playing;
+        
+        syncPlayUI();
+
+        if (state.playing) {
+           document.getElementById('ext-container').classList.add('open');
+           document.getElementById('bili-hint').classList.remove('hidden');
+        } else {
+           document.getElementById('bili-hint').classList.add('hidden');
+        }
+      }
+    }
+
+    // --- State Sync ---
+    function syncPlayUI() {
+      const path = state.playing ? SVG_PAUSE : SVG_PLAY;
+      document.querySelectorAll('.play-state-icon path').forEach(p => p.setAttribute('d', path));
+      document.getElementById('main-play-text').textContent = state.playing ? 'Pause' : 'Play Track';
+      
+      if(state.playing) {
+        bodyWrap.classList.add('is-playing');
+        if (state.mode === 'immersive') startAutoFrame();
+      } else {
+        bodyWrap.classList.remove('is-playing');
+        stopAutoFrame();
+      }
+    }
+
+    function setMode(mode) {
+      if(state.mode === mode) return;
+      state.mode = mode;
+      
+      if(mode === 'immersive') {
+        bodyWrap.className = `mode-immersive ${state.playing ? 'is-playing' : ''}`;
+        if (state.playing) startAutoFrame();
+        wakeUpUI();
+      } else {
+        bodyWrap.className = `mode-preview ${state.playing ? 'is-playing' : ''}`;
+        stopAutoFrame(); clearTimeout(idleTimer); bodyWrap.classList.remove('is-idle');
+      }
+    }
+
+    function wakeUpUI() {
+      if(state.mode !== 'immersive') return;
+      bodyWrap.classList.remove('is-idle');
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => { if(state.playing) bodyWrap.classList.add('is-idle'); }, 2500);
+    }
+
+    function startAutoFrame() { clearInterval(autoTimer); autoTimer = setInterval(() => loadFrame(state.currentFrame + 1), AUTO_MS); }
+    function stopAutoFrame() { clearInterval(autoTimer); }
+
+    // --- Bindings ---
+    document.getElementById('btn-toggle-ext').addEventListener('click', () => {
+      document.getElementById('ext-container').classList.toggle('open');
+    });
+
+    document.getElementById('btn-main-play').addEventListener('click', () => togglePlay());
+    document.getElementById('btn-imm-play').addEventListener('click', () => togglePlay());
+    document.getElementById('btn-enter-imm').addEventListener('click', () => setMode('immersive'));
+    
+    // Canvas Click -> Immersive + Play
+    document.getElementById('canvas-trigger').addEventListener('click', () => {
+      if (state.mode === 'preview') {
+        setMode('immersive');
+        if (!state.playing) togglePlay(true);
+      } else {
+        togglePlay();
+      }
+    });
+    
+    document.getElementById('btn-exit').addEventListener('click', () => setMode('preview'));
+
+    document.addEventListener('mousemove', wakeUpUI);
+    document.addEventListener('touchstart', wakeUpUI);
+    document.addEventListener('keydown', (e) => {
+      if(e.key === 'Escape' && state.mode === 'immersive') setMode('preview');
+      if(e.code === 'Space' && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) { e.preventDefault(); togglePlay(); wakeUpUI(); }
+      if(e.key === 'ArrowRight' && state.mode === 'preview') loadFrame(state.currentFrame + 1);
+      if(e.key === 'ArrowLeft' && state.mode === 'preview') loadFrame(state.currentFrame - 1);
+    });
+
+    initUI();
+  </script>
+</body>
+</html>
