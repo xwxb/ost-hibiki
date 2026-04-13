@@ -1,0 +1,700 @@
+.shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #020203;
+  color: rgba(255, 255, 255, 0.92);
+  font-family: 'Noto Sans JP', -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.fontEn {
+  font-family: 'Kanit', sans-serif;
+}
+
+.globalAmbient {
+  position: fixed;
+  inset: -10%;
+  z-index: -10;
+  background-size: cover;
+  background-position: center;
+  filter: blur(70px) brightness(0.12) saturate(1.4);
+  transition: background-image 1.5s ease;
+  transform: scale(1.1);
+}
+
+.aveeRing {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 40vh;
+  height: 40vh;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  transform: translate(-50%, -50%) scale(0.5);
+  opacity: 0;
+  pointer-events: none;
+  z-index: -5;
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.4), inset 0 0 30px rgba(255, 255, 255, 0.4);
+}
+
+.modeImmersive.isPlaying .aveeRing {
+  animation: aveeBeat 2s cubic-bezier(0.1, 0.8, 0.3, 1) infinite;
+}
+
+.modeImmersive.isPlaying .delay1 {
+  animation-delay: 0.5s;
+}
+
+.modeImmersive.isPlaying .delay2 {
+  animation-delay: 1s;
+}
+
+.modeImmersive.isPlaying .delay3 {
+  animation-delay: 1.5s;
+}
+
+@keyframes aveeBeat {
+  0% {
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 1;
+    border-width: 5px;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(4);
+    opacity: 0;
+    border-width: 1px;
+  }
+}
+
+.centerGlow {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 70vw;
+  height: 70vw;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.06) 0%, transparent 60%);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  z-index: -6;
+  pointer-events: none;
+}
+
+.modeImmersive.isPlaying .centerGlow {
+  animation: pulseGlow 2s alternate infinite ease-in-out;
+}
+
+@keyframes pulseGlow {
+  0% {
+    transform: translate(-50%, -50%) scale(0.8);
+    opacity: 0.5;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(1.1);
+    opacity: 1;
+    filter: brightness(1.4);
+  }
+}
+
+.filmGrain {
+  position: fixed;
+  inset: 0;
+  z-index: -8;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+}
+
+.app {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  transition: padding 0.8s cubic-bezier(0.22, 1, 0.36, 1), gap 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+}
+
+.modePreview .app {
+  padding: 40px 6vw;
+  gap: 4vw;
+  align-items: center;
+  justify-content: center;
+}
+
+.modeImmersive .app {
+  padding: 0;
+  gap: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.artCol {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  position: relative;
+}
+
+.modeImmersive .artCol {
+  width: 100vw;
+  flex: none;
+}
+
+.artCanvas {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  transition:
+    max-height 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+    max-width 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.8s cubic-bezier(0.22, 1, 0.36, 1),
+    margin 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.modePreview .artCanvas {
+  max-width: 900px;
+  max-height: 68vh;
+  border-radius: 16px;
+  cursor: pointer;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.modePreview .artCanvas:hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: 0 40px 90px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.modeImmersive .artCanvas {
+  max-width: 70vw;
+  max-height: 60vh;
+  border-radius: 12px;
+  margin-bottom: 4vh;
+  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.frameLayer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 1.2s ease, visibility 1.2s;
+}
+
+.frameLayerActive {
+  opacity: 1;
+  visibility: visible;
+}
+
+.imgBg {
+  position: absolute;
+  inset: -10%;
+  width: 120%;
+  height: 120%;
+  object-fit: cover;
+  filter: blur(30px) brightness(0.4);
+  opacity: 0.9;
+}
+
+.imgFg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: scale(1.02);
+}
+
+.modeImmersive.isPlaying .frameLayerActive .imgFg {
+  transition: transform 18s linear;
+  transform: scale(1);
+}
+
+.hoverExpandOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 5;
+}
+
+.modePreview .artCanvas:hover .hoverExpandOverlay {
+  opacity: 1;
+}
+
+.modeImmersive .hoverExpandOverlay {
+  display: none;
+}
+
+.glassPlayBtn {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: white;
+  transition: transform 0.2s, background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.modePreview .artCanvas:hover .glassPlayBtn {
+  transform: scale(1.05);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.dotsContainer {
+  display: flex;
+  gap: 10px;
+  margin-top: 24px;
+  transition: opacity 0.5s ease;
+}
+
+.modeImmersive .dotsContainer {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.dot:hover {
+  background: rgba(255, 255, 255, 0.5);
+  transform: scale(1.2);
+}
+
+.dotActive {
+  background: rgba(255, 255, 255, 0.9);
+  transform: scale(1.4);
+}
+
+.infoCol {
+  flex: 0 0 380px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 0.4s ease, transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.modeImmersive .infoCol {
+  position: absolute;
+  right: -400px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.title {
+  margin: 0;
+  font-family: 'Kanit', sans-serif;
+  font-size: 2.5rem;
+  line-height: 1.1;
+  letter-spacing: 0.03em;
+}
+
+.subtitle {
+  margin: 12px 0 0;
+  font-size: 15px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.tagWrap {
+  margin-top: 22px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tag {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.meta {
+  margin-top: 28px;
+  font-size: 14px;
+}
+
+.metaLabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.4);
+  margin-right: 12px;
+}
+
+.actions {
+  margin-top: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+}
+
+.mainPlayBtn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 28px;
+  border-radius: 999px;
+  border: 0;
+  background: #fff;
+  color: #000;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 0.2s, opacity 0.2s;
+}
+
+.mainPlayBtn:hover {
+  transform: scale(1.03);
+  opacity: 0.9;
+}
+
+.btnSecondary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.btnSecondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+  transform: scale(1.03);
+}
+
+.biliHint {
+  position: absolute;
+  top: -22px;
+  left: 8px;
+  font-size: 10px;
+  color: rgba(255, 112, 112, 0.88);
+  letter-spacing: 0.05em;
+}
+
+.copyrightArea {
+  position: relative;
+  margin-top: 1.8rem;
+  padding-top: 1.3rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 11px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.copyrightArea p {
+  margin: 0;
+}
+
+.copyrightArea p + p {
+  margin-top: 4px;
+}
+
+.sourceRow {
+  margin-top: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sourceLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.sourceLink:hover {
+  color: #fff;
+}
+
+.sourceToggle {
+  border: 0;
+  background: transparent;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.32);
+  cursor: pointer;
+}
+
+.debugPopover {
+  position: absolute;
+  top: calc(100% + 12px);
+  left: 0;
+  right: 0;
+  background: rgba(18, 18, 22, 0.95);
+  backdrop-filter: blur(25px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+  z-index: 120;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-10px);
+  transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.debugPopoverOpen {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.selectTrigger {
+  display: flex;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 10px;
+}
+
+.playerWrapper {
+  height: 160px;
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.playerIframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.immUi {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  padding: 4vh 4vw;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0.6s;
+}
+
+.modeImmersive .immUi {
+  opacity: 1;
+  visibility: visible;
+}
+
+.modeImmersive.isIdle .immUi {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.immTop {
+  top: 0;
+  transform: translateY(-20px);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
+  justify-content: space-between;
+}
+
+.modeImmersive .immTop {
+  transform: translateY(0);
+}
+
+.modeImmersive.isIdle .immTop {
+  transform: translateY(-20px);
+}
+
+.immBottom {
+  bottom: 0;
+  transform: translateY(20px);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.7) 0%, transparent 100%);
+  justify-content: center;
+  padding-bottom: 5vh;
+}
+
+.modeImmersive .immBottom {
+  transform: translateY(0);
+}
+
+.modeImmersive.isIdle .immBottom {
+  transform: translateY(20px);
+}
+
+.iconBtn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.iconBtn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.playerPill {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(20, 20, 22, 0.4);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.iconBtnPrimary {
+  color: #000;
+  background: #fff;
+}
+
+.iconBtnPrimary:hover {
+  transform: scale(1.05);
+}
+
+.eqVisualizer {
+  display: flex;
+  gap: 3px;
+  align-items: flex-end;
+  height: 16px;
+  margin: 0 20px;
+}
+
+.eqBar {
+  width: 3px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 2px;
+  height: 3px;
+}
+
+.isPlaying .eqBar {
+  animation: eq 0.8s infinite alternate ease-in-out;
+}
+
+.isPlaying .eqBar:nth-child(1) {
+  animation-delay: 0s;
+  height: 60%;
+}
+
+.isPlaying .eqBar:nth-child(2) {
+  animation-delay: 0.2s;
+  height: 100%;
+}
+
+.isPlaying .eqBar:nth-child(3) {
+  animation-delay: 0.4s;
+  height: 40%;
+}
+
+.isPlaying .eqBar:nth-child(4) {
+  animation-delay: 0.1s;
+  height: 80%;
+}
+
+.isPlaying .eqBar:nth-child(5) {
+  animation-delay: 0.3s;
+  height: 50%;
+}
+
+@keyframes eq {
+  0% {
+    height: 20%;
+  }
+
+  100% {
+    height: 100%;
+  }
+}
+
+.loading,
+.notFound {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.76);
+}
+
+@media (max-width: 1024px) {
+  .modePreview .app {
+    flex-direction: column;
+    justify-content: flex-start;
+    padding-top: 24px;
+    gap: 20px;
+  }
+
+  .modePreview .artCanvas {
+    width: min(100%, 860px);
+  }
+
+  .infoCol {
+    width: min(100%, 860px);
+    flex-basis: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .modeImmersive .artCanvas {
+    max-width: 92vw;
+    max-height: 56vh;
+  }
+
+  .title {
+    font-size: 1.95rem;
+  }
+
+  .subtitle {
+    font-size: 13px;
+  }
+
+  .copyrightArea {
+    margin-bottom: 12px;
+  }
+}
