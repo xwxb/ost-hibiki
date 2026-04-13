@@ -15,6 +15,37 @@ function sourceName(source: SourceType) {
   return "Netease Engine";
 }
 
+function sourceLabel(source: SourceType) {
+  if (source === "youtube") return "YouTube";
+  if (source === "bilibili") return "Bilibili";
+  return "Netease";
+}
+
+function SourceGlyph({ source }: { source: SourceType }) {
+  if (source === "youtube") {
+    return (
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
+        <path d="M21.582 6.186a2.635 2.635 0 0 0-1.85-1.87C18.096 3.88 12 3.88 12 3.88s-6.096 0-7.732.436a2.635 2.635 0 0 0-1.85 1.87C2 7.842 2 12 2 12s0 4.158.418 5.814a2.635 2.635 0 0 0 1.85 1.87C5.904 20.12 12 20.12 12 20.12s6.096 0 7.732-.436a2.635 2.635 0 0 0 1.85-1.87C22 16.158 22 12 22 12s0-4.158-.418-5.814zM9.912 15.176v-6.352l5.776 3.176-5.776 3.176z" />
+      </svg>
+    );
+  }
+
+  if (source === "bilibili") {
+    return (
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+        <path d="M7 7.5 4.5 5M17 7.5 19.5 5M7.5 8h9A3.5 3.5 0 0 1 20 11.5v4A3.5 3.5 0 0 1 16.5 19h-9A3.5 3.5 0 0 1 4 15.5v-4A3.5 3.5 0 0 1 7.5 8Z" />
+        <path d="M9.5 12.5v.01M14.5 12.5v.01" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M12 3v13M8 7a6 6 0 1 0 6 6" />
+    </svg>
+  );
+}
+
 function sourceOrder(song: OstSongItem): SourceType[] {
   const list: SourceType[] = [];
   if (song.media_urls.ytb_url) list.push("youtube");
@@ -28,6 +59,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   const [playing, setPlaying] = useState(false);
   const [frameIndex, setFrameIndex] = useState(0);
   const [extOpen, setExtOpen] = useState(false);
+  const [legalOpen, setLegalOpen] = useState(false);
   const [idle, setIdle] = useState(false);
   const [playerNonce, setPlayerNonce] = useState(0);
 
@@ -41,6 +73,10 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
       : source === "bilibili"
         ? song.media_urls.bili_url
         : song.media_urls.netease_url;
+
+  useEffect(() => {
+    document.title = `${song.song_title} | OST Hibiki`;
+  }, [song.song_title]);
 
   useEffect(() => {
     if (!(playing && mode === "immersive")) return;
@@ -109,6 +145,14 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     togglePlay();
   }
 
+  function goNextFrame() {
+    setFrameIndex((current) => (current + 1) % song.img_urls.length);
+  }
+
+  function goPrevFrame() {
+    setFrameIndex((current) => (current - 1 + song.img_urls.length) % song.img_urls.length);
+  }
+
   function renderPlayer() {
     if (!sourceUrl) return <p className="player-empty">当前源暂无链接</p>;
     const embedUrl = buildEmbedUrl(source, sourceUrl, playing && source === "youtube");
@@ -129,6 +173,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   return (
     <div className={`song-root mode-${mode} ${playing ? "is-playing" : ""} ${idle ? "is-idle" : ""}`}>
       <div className="global-ambient" style={{ backgroundImage: `url(${activeImage})` }} />
+      <div className="global-ambient global-ambient-float" style={{ backgroundImage: `url(${activeImage})` }} />
       <div className="film-grain" />
 
       <header className="imm-ui imm-top">
@@ -150,6 +195,41 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
             <div className="frame-layer active">
               <img className="img-bg" src={activeImage} alt="bg" />
               <img className={`img-fg ${mode === "immersive" && playing ? "zooming" : ""}`} src={activeImage} alt={song.song_title} />
+            </div>
+            {song.img_urls.length > 1 ? (
+              <>
+                <button
+                  type="button"
+                  className="frame-nav frame-nav-prev"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    goPrevFrame();
+                  }}
+                  aria-label="previous image"
+                >
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="m15 18-6-6 6-6" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="frame-nav frame-nav-next"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    goNextFrame();
+                  }}
+                  aria-label="next image"
+                >
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                </button>
+              </>
+            ) : null}
+            <div className="frame-counter">
+              <span>
+                {frameIndex + 1} / {song.img_urls.length}
+              </span>
             </div>
             <div className="hover-expand-overlay">
               <div className="glass-play-btn">
@@ -175,6 +255,10 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
         <section className="info-col">
           <h1>{song.song_title}</h1>
           <p className="subtitle">{song.subtitle ?? ""}</p>
+          <div className="song-kicker">
+            {song.bangumi_id ? <span>BGM #{song.bangumi_id}</span> : null}
+            <span>{song.img_urls.length} Frames</span>
+          </div>
           <div className="tag-list">
             {song.tags.map((tag) => (
               <span key={tag} className="tag">
@@ -206,14 +290,27 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
           {source === "bilibili" ? <p className="bili-hint">* 检测到 Bilibili 源，请在下方播放器手动点击播放</p> : null}
 
           <div className="copyright-area">
-            <p>本项目为非营利性质，所有版权归原作者所有。</p>
-            <p>侵权删改联系: i@045510.xyz</p>
             <div className="source-row">
               <a href={sourceUrl ?? "#"} target="_blank" rel="noreferrer">
-                Original Source
+                <span className="source-link-main">
+                  <SourceGlyph source={source} />
+                  <span>{sourceLabel(source)}</span>
+                </span>
+                <span className="source-link-sub">Original Source</span>
               </a>
               <button onClick={() => setExtOpen((open) => !open)}>Sources & Debug</button>
             </div>
+            <div className="legal-actions">
+              <button className="legal-toggle" onClick={() => setLegalOpen((open) => !open)}>
+                {legalOpen ? "Hide Notice" : "Copyright Notice"}
+              </button>
+            </div>
+            {legalOpen ? (
+              <div className="legal-copy">
+                <p>本项目为非营利性质，所有版权归原作者所有。</p>
+                <p>侵权删改联系: i@045510.xyz</p>
+              </div>
+            ) : null}
             <div className={`debug-popover ${extOpen ? "open" : ""}`}>
               <div className="source-pills">
                 {sources.map((item) => (
