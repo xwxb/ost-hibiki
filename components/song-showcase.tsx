@@ -67,6 +67,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   const [source, setSource] = useState<SourceType>(sources[0]);
 
   const activeImage = song.img_urls[frameIndex] ?? song.img_urls[0];
+  const frameMotionKey = `${frameIndex}-${activeImage}`;
   const sourceUrl =
     source === "youtube"
       ? song.media_urls.ytb_url
@@ -192,44 +193,9 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
       <div id="app">
         <section className="art-col">
           <div className="art-canvas" onClick={onCanvasClick}>
-            <div className="frame-layer active">
+            <div key={frameMotionKey} className="frame-layer active frame-layer-animated">
               <img className="img-bg" src={activeImage} alt="bg" />
               <img className={`img-fg ${mode === "immersive" && playing ? "zooming" : ""}`} src={activeImage} alt={song.song_title} />
-            </div>
-            {song.img_urls.length > 1 ? (
-              <>
-                <button
-                  type="button"
-                  className="frame-nav frame-nav-prev"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    goPrevFrame();
-                  }}
-                  aria-label="previous image"
-                >
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="m15 18-6-6 6-6" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  className="frame-nav frame-nav-next"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    goNextFrame();
-                  }}
-                  aria-label="next image"
-                >
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="m9 18 6-6-6-6" />
-                  </svg>
-                </button>
-              </>
-            ) : null}
-            <div className="frame-counter">
-              <span>
-                {frameIndex + 1} / {song.img_urls.length}
-              </span>
             </div>
             <div className="hover-expand-overlay">
               <div className="glass-play-btn">
@@ -255,10 +221,6 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
         <section className="info-col">
           <h1>{song.song_title}</h1>
           <p className="subtitle">{song.subtitle ?? ""}</p>
-          <div className="song-kicker">
-            {song.bangumi_id ? <span>BGM #{song.bangumi_id}</span> : null}
-            <span>{song.img_urls.length} Frames</span>
-          </div>
           <div className="tag-list">
             {song.tags.map((tag) => (
               <span key={tag} className="tag">
@@ -296,13 +258,13 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
                   <SourceGlyph source={source} />
                   <span>{sourceLabel(source)}</span>
                 </span>
-                <span className="source-link-sub">Original Source</span>
+                <span className="source-link-sub">Open source</span>
               </a>
-              <button onClick={() => setExtOpen((open) => !open)}>Sources & Debug</button>
+              <button onClick={() => setExtOpen((open) => !open)}>{extOpen ? "Hide sources" : "Sources"}</button>
             </div>
             <div className="legal-actions">
               <button className="legal-toggle" onClick={() => setLegalOpen((open) => !open)}>
-                {legalOpen ? "Hide Notice" : "Copyright Notice"}
+                {legalOpen ? "Hide notice" : "Notice"}
               </button>
             </div>
             {legalOpen ? (

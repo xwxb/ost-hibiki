@@ -21,6 +21,10 @@ const EMPTY_FORM = {
   bangumi_id: ""
 };
 
+function sourceCount(song: OstSongItem) {
+  return [song.media_urls.ytb_url, song.media_urls.bili_url, song.media_urls.netease_url].filter(Boolean).length;
+}
+
 export function SearchHome() {
   const [query, setQuery] = useState("");
   const [songs, setSongs] = useState<OstSongItem[]>([]);
@@ -107,8 +111,8 @@ export function SearchHome() {
       <section className="search-shell">
         <header className="search-header">
           <p className="eyebrow">Ost Hibiki</p>
-          <h1>找到你想听的那一首</h1>
-          <p>搜索曲名、副标题或标签，直接进入单曲页播放。</p>
+          <h1>音の余韻</h1>
+          <p>Search by title, subtitle, or tag.</p>
         </header>
 
         <div className="search-toolbar">
@@ -129,9 +133,16 @@ export function SearchHome() {
           {pagedSongs.map((song) => (
             <Link key={song.id} href={`/song/${song.id}`} className="song-card">
               <img src={song.img_urls[0]} alt={song.song_title} />
-              <div>
+              <div className="song-card-body">
+                <div className="song-card-topline">
+                  <span>{sourceCount(song)} sources</span>
+                  {song.id.startsWith("temp-") ? <span className="song-card-badge">Local</span> : null}
+                </div>
                 <h2>{song.song_title}</h2>
-                <p>{song.subtitle ?? "No subtitle"}</p>
+                <p>{song.subtitle ?? " "}</p>
+                <div className="song-card-meta">
+                  <span>{song.composer ?? "Unknown composer"}</span>
+                </div>
                 <div className="tags">
                   {song.tags.slice(0, 3).map((tag) => (
                     <span key={tag}>{tag}</span>
@@ -164,17 +175,26 @@ export function SearchHome() {
 
         {showTempForm ? (
           <form className="temp-form" onSubmit={handleAddTempSong}>
-            <h3>添加本地临时曲目</h3>
-            <div className="form-grid">
+            <div className="temp-form-head">
+              <div>
+                <h3>Temporary Entry</h3>
+                <p>Stored only in this browser.</p>
+              </div>
+            </div>
+            <div className="form-grid form-grid-main">
               <input value={form.song_title} onChange={(e) => updateField("song_title", e.target.value)} placeholder="song_title*" />
               <input value={form.subtitle} onChange={(e) => updateField("subtitle", e.target.value)} placeholder="subtitle" />
               <input value={form.tags} onChange={(e) => updateField("tags", e.target.value)} placeholder="tags: a,b,c" />
+            </div>
+            <div className="form-grid form-grid-secondary">
               <input value={form.composer} onChange={(e) => updateField("composer", e.target.value)} placeholder="composer" />
-              <input value={form.bangumi_id} onChange={(e) => updateField("bangumi_id", e.target.value)} placeholder="bangumi_id" />
               <input value={form.ytb_url} onChange={(e) => updateField("ytb_url", e.target.value)} placeholder="ytb_url" />
               <input value={form.bili_url} onChange={(e) => updateField("bili_url", e.target.value)} placeholder="bili_url" />
+            </div>
+            <div className="form-grid form-grid-secondary">
               <input value={form.netease_url} onChange={(e) => updateField("netease_url", e.target.value)} placeholder="netease_url" />
               <input value={form.img_urls} onChange={(e) => updateField("img_urls", e.target.value)} placeholder="img_urls: url1,url2*" />
+              <input value={form.bangumi_id} onChange={(e) => updateField("bangumi_id", e.target.value)} placeholder="bangumi_id" />
             </div>
             <button type="submit">保存到 localStorage</button>
             {error ? <p className="form-error">{error}</p> : null}
