@@ -90,12 +90,16 @@ export async function querySongs(filter: SongFilter): Promise<OstSongItem[]> {
   const collection = db.collection<RawSongDoc>(COLLECTION);
   const docs = await collection.find(toMongoFilter(filter)).limit(120).toArray();
 
+  const hasMissingId = docs.some((doc) => doc.id === undefined || doc.id === null || doc.id === "");
   const maxExistingId = docs.reduce((max, doc) => Math.max(max, parseNumericId(doc.id) ?? 0), 0);
-  if (maxExistingId > 0) {
+  if (hasMissingId && maxExistingId > 0) {
     await ensureSongIdCounterAtLeast(db, maxExistingId);
   }
 
-  const normalizedDocs = await Promise.all(docs.map((doc) => ensureMongoSongId(db, collection, doc)));
+  const normalizedDocs: RawSongDoc[] = [];
+  for (const doc of docs) {
+    normalizedDocs.push(await ensureMongoSongId(db, collection, doc));
+  }
   return normalizedDocs.map(normalizeMongoDoc);
 }
 
@@ -107,7 +111,7 @@ export async function getSongById(id: string): Promise<OstSongItem | null> {
   const collection = db.collection<RawSongDoc>(COLLECTION);
   const clauses: Filter<RawSongDoc>[] = [];
   const numericId = parseNumericId(id);
-  if (numericId) clauses.push({ id: numericId }, { id });
+  if (numericId) clauses.push({ id: numericId });
   if (!numericId) clauses.push({ id });
   if (ObjectId.isValid(id)) clauses.push({ _id: new ObjectId(id) });
   const doc = await collection.findOne({ $or: clauses });
