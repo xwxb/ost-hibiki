@@ -16,7 +16,7 @@ export function SongLoader({ songId }: { songId: string }) {
     async function load() {
       setLoading(true);
       try {
-        const local = getLocalSongs().find((item) => item.id === songId);
+        const local = getLocalSongs().find((item) => String(item.id) === songId);
         if (local && mounted) {
           setSong(local);
           setLoading(false);

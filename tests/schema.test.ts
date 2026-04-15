@@ -26,4 +26,17 @@ describe("schema", () => {
       })
     ).toThrow();
   });
+
+  it("accepts numeric id for mongo auto-increment docs", () => {
+    const song = parseSong({
+      id: 1001,
+      song_title: "My Song",
+      tags: [],
+      media_urls: {
+        ytb_url: "https://www.youtube.com/watch?v=test"
+      },
+      img_urls: ["https://img.example.com/1.jpg"]
+    });
+    expect(song.id).toBe(1001);
+  });
 });

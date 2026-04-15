@@ -131,12 +131,12 @@ export function SearchHome() {
 
         <div className="song-grid">
           {pagedSongs.map((song) => (
-            <Link key={song.id} href={`/song/${song.id}`} className="song-card">
+            <Link key={String(song.id)} href={`/song/${song.id}`} className="song-card">
               <img src={song.img_urls[0]} alt={song.song_title} />
               <div className="song-card-body">
                 <div className="song-card-topline">
                   <span>{sourceCount(song)} sources</span>
-                  {song.id.startsWith("temp-") ? <span className="song-card-badge">Local</span> : null}
+                  {typeof song.id === "string" && song.id.startsWith("temp-") ? <span className="song-card-badge">Local</span> : null}
                 </div>
                 <h2>{song.song_title}</h2>
                 <p>{song.subtitle ?? " "}</p>

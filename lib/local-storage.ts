@@ -23,7 +23,7 @@ export function saveLocalSongs(items: OstSongItem[]) {
 
 export function addLocalSong(song: OstSongItem): OstSongItem[] {
   const songs = getLocalSongs();
-  const next = [song, ...songs.filter((item) => item.id !== song.id)];
+  const next = [song, ...songs.filter((item) => String(item.id) !== String(song.id))];
   saveLocalSongs(next);
   return next;
 }
