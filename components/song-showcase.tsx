@@ -54,6 +54,12 @@ function sourceOrder(song: OstSongItem): SourceType[] {
   return list.length ? list : ["youtube"];
 }
 
+function splitSongTitle(title: string) {
+  const match = title.match(/^(.*?)(\s*\([^)]*\))$/);
+  if (!match) return { main: title, suffix: "" };
+  return { main: match[1].trim(), suffix: match[2].trim() };
+}
+
 export function SongShowcase({ song }: { song: OstSongItem }) {
   const [mode, setMode] = useState<ModeType>("preview");
   const [playing, setPlaying] = useState(false);
@@ -68,6 +74,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
 
   const activeImage = song.img_urls[frameIndex] ?? song.img_urls[0];
   const frameMotionKey = `${frameIndex}-${activeImage}`;
+  const titleParts = splitSongTitle(song.song_title);
   const sourceUrl =
     source === "youtube"
       ? song.media_urls.ytb_url
@@ -219,7 +226,10 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
         </section>
 
         <section className="info-col">
-          <h1>{song.song_title}</h1>
+          <h1 className="song-title">
+            <span className="song-title-main">{titleParts.main}</span>
+            {titleParts.suffix ? <span className="song-title-suffix">{titleParts.suffix}</span> : null}
+          </h1>
           <p className="subtitle">{song.subtitle ?? ""}</p>
           <div className="tag-list">
             {song.tags.map((tag) => (
@@ -253,19 +263,23 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
 
           <div className="copyright-area">
             <div className="source-row">
-              <a href={sourceUrl ?? "#"} target="_blank" rel="noreferrer">
-                <span className="source-link-main">
-                  <SourceGlyph source={source} />
-                  <span>{sourceLabel(source)}</span>
-                </span>
-                <span className="source-link-sub">Open source</span>
-              </a>
-              <button onClick={() => setExtOpen((open) => !open)}>{extOpen ? "Hide sources" : "Sources"}</button>
-            </div>
-            <div className="legal-actions">
-              <button className="legal-toggle" onClick={() => setLegalOpen((open) => !open)}>
-                {legalOpen ? "Hide notice" : "Notice"}
-              </button>
+              <div className="source-row-cluster">
+                <a href={sourceUrl ?? "#"} target="_blank" rel="noreferrer" className="source-link">
+                  <span className="source-link-main">
+                    <SourceGlyph source={source} />
+                    <span>{sourceLabel(source)}</span>
+                  </span>
+                </a>
+                <button className="legal-toggle" onClick={() => setLegalOpen((open) => !open)}>
+                  {legalOpen ? "Hide notice" : "Notice"}
+                </button>
+              </div>
+              <div className="source-row-cluster source-row-meta">
+                <a href={sourceUrl ?? "#"} target="_blank" rel="noreferrer" className="source-link-sub">
+                  Open source
+                </a>
+                <button onClick={() => setExtOpen((open) => !open)}>{extOpen ? "Hide sources" : "Sources"}</button>
+              </div>
             </div>
             {legalOpen ? (
               <div className="legal-copy">
