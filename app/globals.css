@@ -552,6 +552,16 @@ body {
   pointer-events: none;
 }
 
+.mode-immersive.is-idle .imm-ui.imm-bottom {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.mode-immersive.center-hover .imm-ui.imm-bottom {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .imm-top {
   top: 0;
   transform: translateY(-20px);

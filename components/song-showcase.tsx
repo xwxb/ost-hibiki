@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { OstSongItem } from "@/lib/schema";
 import { buildEmbedUrl } from "@/lib/media";
 
@@ -67,12 +67,19 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   const [extOpen, setExtOpen] = useState(false);
   const [legalOpen, setLegalOpen] = useState(false);
   const [idle, setIdle] = useState(false);
+  const [centerHover, setCenterHover] = useState(false);
   const [playerNonce, setPlayerNonce] = useState(0);
+  const [prevImage, setPrevImage] = useState<string | null>(null);
 
   const sources = useMemo(() => sourceOrder(song), [song]);
   const [source, setSource] = useState<SourceType>(sources[0]);
 
   const activeImage = song.img_urls[frameIndex] ?? song.img_urls[0];
+  const prevImageRef = useRef(activeImage);
+  if (prevImageRef.current !== activeImage) {
+    setPrevImage(prevImageRef.current);
+    prevImageRef.current = activeImage;
+  }
   const frameMotionKey = `${frameIndex}-${activeImage}`;
   const titleParts = splitSongTitle(song.song_title);
   const sourceUrl =
@@ -85,6 +92,12 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   useEffect(() => {
     document.title = `${song.song_title} | OST Hibiki`;
   }, [song.song_title]);
+
+  useEffect(() => {
+    if (!prevImage) return;
+    const timer = setTimeout(() => setPrevImage(null), 1000);
+    return () => clearTimeout(timer);
+  }, [prevImage]);
 
   useEffect(() => {
     if (!(playing && mode === "immersive")) return;
@@ -161,6 +174,18 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     setFrameIndex((current) => (current - 1 + song.img_urls.length) % song.img_urls.length);
   }
 
+  function onCanvasMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (mode !== "immersive") return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = (e.clientX - rect.left) / rect.width;
+    const cy = (e.clientY - rect.top) / rect.height;
+    setCenterHover(cx > 0.3 && cx < 0.7 && cy > 0.3 && cy < 0.7);
+  }
+
+  function onCanvasMouseLeave() {
+    setCenterHover(false);
+  }
+
   function renderPlayer() {
     if (!sourceUrl) return <p className="player-empty">当前源暂无链接</p>;
     const embedUrl = buildEmbedUrl(source, sourceUrl, playing && source === "youtube");
@@ -179,7 +204,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   }
 
   return (
-    <div className={`song-root mode-${mode} ${playing ? "is-playing" : ""} ${idle ? "is-idle" : ""}`}>
+    <div className={`song-root mode-${mode} ${playing ? "is-playing" : ""} ${idle ? "is-idle" : ""} ${centerHover ? "center-hover" : ""}`}>
       <div className="global-ambient" style={{ backgroundImage: `url(${activeImage})` }} />
       <div className="global-ambient global-ambient-float" style={{ backgroundImage: `url(${activeImage})` }} />
       <div className="film-grain" />
@@ -199,7 +224,13 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
 
       <div id="app">
         <section className="art-col">
-          <div className="art-canvas" onClick={onCanvasClick}>
+          <div className="art-canvas" onClick={onCanvasClick} onMouseMove={onCanvasMouseMove} onMouseLeave={onCanvasMouseLeave}>
+            {prevImage && prevImage !== activeImage && (
+              <div className="frame-layer active">
+                <img className="img-bg" src={prevImage} alt="bg" />
+                <img className="img-fg" src={prevImage} alt="" />
+              </div>
+            )}
             <div key={frameMotionKey} className="frame-layer active frame-layer-animated">
               <img className="img-bg" src={activeImage} alt="bg" />
               <img className={`img-fg ${mode === "immersive" && playing ? "zooming" : ""}`} src={activeImage} alt={song.song_title} />
