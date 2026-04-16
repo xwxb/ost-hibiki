@@ -15,7 +15,7 @@ export const mediaUrlsSchema = z.object({
 
 export const ostSongSchema = z
   .object({
-    id: z.string().trim().min(1),
+    id: z.union([z.number().int().positive(), z.string().trim().min(1)]),
     song_title: z.string().trim().min(1),
     subtitle: z.string().trim().optional(),
     tags: z.array(z.string().trim()).default([]),

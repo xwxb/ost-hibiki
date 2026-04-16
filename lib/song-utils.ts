@@ -36,7 +36,7 @@ export function filterSongs(songs: OstSongItem[], filter: SongFilter): OstSongIt
 
 export function mergeSongs(remoteSongs: OstSongItem[], localSongs: OstSongItem[]): OstSongItem[] {
   const map = new Map<string, OstSongItem>();
-  for (const song of remoteSongs) map.set(song.id, song);
-  for (const song of localSongs) map.set(song.id, song);
+  for (const song of remoteSongs) map.set(String(song.id), song);
+  for (const song of localSongs) map.set(String(song.id), song);
   return [...map.values()].sort((a, b) => a.song_title.localeCompare(b.song_title));
 }

@@ -28,4 +28,12 @@ describe("song-utils", () => {
     expect(merged).toHaveLength(1);
     expect(merged[0].subtitle).toBe("Local Override");
   });
+
+  it("treats numeric and string ids as the same key when merging", () => {
+    const remote = [{ ...baseSong, id: 101 }];
+    const local = [{ ...baseSong, id: "101", subtitle: "Local Override" }];
+    const merged = mergeSongs(remote, local);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].subtitle).toBe("Local Override");
+  });
 });

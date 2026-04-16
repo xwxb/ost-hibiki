@@ -5,7 +5,7 @@
 
 ```ts
 interface OstSongItem {
-  id: string;
+  id: number | string;
 
   // 展示与搜索
   song_title: string; // 主搜索字段
@@ -32,6 +32,21 @@ interface OstSongItem {
   extras?: Record<string, string | number | boolean | string[]>;
 }
 ```
+
+## 自增 ID（Mongo）
+
+1. 正式歌曲文档建议使用 `id: number`，由 `counters` 集合维护自增序号。
+2. `counters` 集合最小结构：
+
+```ts
+interface CounterDoc {
+  _id: "songs";
+  seq: number; // 当前已分配的最大 song id
+}
+```
+
+3. 历史文档若缺失 `id`，可在读取时按计数器补齐并回写。
+4. 本地临时曲目仍可使用字符串 id（如 `temp-*`）以避免与正式数据冲突。
 
 ## 最小校验
 
