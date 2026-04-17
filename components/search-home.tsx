@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useEffect, useMemo, useState, useTransition } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { addLocalSong, getLocalSongs } from "@/lib/local-storage";
+import { usePreloadImages } from "@/lib/image-preloader";
 import { parseSong, type OstSongItem } from "@/lib/schema";
 import { filterSongs, mergeSongs } from "@/lib/song-utils";
 
 type SongsResponse = { items: OstSongItem[] };
 const PAGE_SIZE = 9;
+const DEBOUNCE_MS = 300;
 
 const EMPTY_FORM = {
   song_title: "",
@@ -27,43 +29,70 @@ function sourceCount(song: OstSongItem) {
 
 export function SearchHome() {
   const [query, setQuery] = useState("");
-  const [songs, setSongs] = useState<OstSongItem[]>([]);
   const [remoteSongs, setRemoteSongs] = useState<OstSongItem[]>([]);
   const [localSongs, setLocalSongs] = useState<OstSongItem[]>([]);
   const [page, setPage] = useState(1);
   const [showTempForm, setShowTempForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState("");
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
   const deferredQuery = useDeferredValue(query);
 
-  useEffect(() => {
-    const initialLocal = getLocalSongs();
-    setLocalSongs(initialLocal);
-    void loadRemote("");
-  }, []);
+  const abortRef = useRef<AbortController | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
-  useEffect(() => {
+  //=== 派生数据：直接由 remote + local + query 推导，不额外存 state
+  const songs = useMemo(() => {
     const merged = mergeSongs(remoteSongs, localSongs);
-    setSongs(filterSongs(merged, { q: deferredQuery }));
+    return filterSongs(merged, { q: deferredQuery });
   }, [deferredQuery, localSongs, remoteSongs]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [deferredQuery, songs.length]);
+  const totalPages = Math.max(1, Math.ceil(songs.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
 
-  async function loadRemote(q: string) {
-    const response = await fetch(`/api/songs?q=${encodeURIComponent(q)}`, { cache: "no-store" });
-    if (!response.ok) return;
-    const data = (await response.json()) as SongsResponse;
-    setRemoteSongs(data.items);
+  const pagedSongs = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return songs.slice(start, start + PAGE_SIZE);
+  }, [safePage, songs]);
+
+  //=== 图片预加载：当前页 high，下一页 low
+  const nextPageStart = safePage * PAGE_SIZE;
+  usePreloadImages(pagedSongs.map(s => s.img_urls[0]).filter(Boolean), "high");
+  usePreloadImages(songs.slice(nextPageStart, nextPageStart + PAGE_SIZE).map(s => s.img_urls[0]).filter(Boolean), "low");
+
+  //=== 初始化 & 清理
+  useEffect(() => {
+    setLocalSongs(getLocalSongs());
+    void loadRemote("");
+    return () => {
+      clearTimeout(debounceRef.current);
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  async function loadRemote(q: string, signal?: AbortSignal) {
+    try {
+      const response = await fetch(`/api/songs?q=${encodeURIComponent(q)}`, { cache: "no-store", signal });
+      if (!response.ok) return;
+      const data = (await response.json()) as SongsResponse;
+      setRemoteSongs(data.items);
+      setIsPending(false);
+    } catch {
+      if (!signal?.aborted) setIsPending(false);
+    }
   }
 
   function handleSearch(value: string) {
     setQuery(value);
-    startTransition(() => {
-      void loadRemote(value);
-    });
+    setPage(1);
+    clearTimeout(debounceRef.current);
+    setIsPending(true);
+    debounceRef.current = setTimeout(() => {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      void loadRemote(value, controller.signal);
+    }, DEBOUNCE_MS);
   }
 
   function updateField(key: keyof typeof EMPTY_FORM, value: string) {
@@ -97,12 +126,6 @@ export function SearchHome() {
     }
   }
 
-  const totalPages = Math.max(1, Math.ceil(songs.length / PAGE_SIZE));
-  const pagedSongs = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return songs.slice(start, start + PAGE_SIZE);
-  }, [page, songs]);
-
   const hasQuery = query.trim().length > 0;
 
   return (
@@ -132,7 +155,7 @@ export function SearchHome() {
         <div className="song-grid">
           {pagedSongs.map((song) => (
             <Link key={String(song.id)} href={`/song/${song.id}`} className="song-card">
-              <img src={song.img_urls[0]} alt={song.song_title} />
+              <img src={song.img_urls[0]} alt={song.song_title} decoding="async" />
               <div className="song-card-body">
                 <div className="song-card-topline">
                   <span>{sourceCount(song)} sources</span>
@@ -161,13 +184,13 @@ export function SearchHome() {
 
         {songs.length > PAGE_SIZE ? (
           <div className="pager">
-            <button disabled={page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+            <button disabled={safePage === 1} onClick={() => setPage(Math.max(1, safePage - 1))}>
               Prev
             </button>
             <span>
-              {page} / {totalPages}
+              {safePage} / {totalPages}
             </span>
-            <button disabled={page === totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>
+            <button disabled={safePage === totalPages} onClick={() => setPage(Math.min(totalPages, safePage + 1))}>
               Next
             </button>
           </div>
