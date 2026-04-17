@@ -135,8 +135,12 @@ export async function getSongById(id: string): Promise<OstSongItem | null> {
   const collection = db.collection<RawSongDoc>(COLLECTION);
   const clauses: Filter<RawSongDoc>[] = [];
   const numericId = parseNumericId(id);
-  if (numericId) clauses.push({ id: numericId });
-  if (!numericId) clauses.push({ id });
+  // 兼容历史库里 id 的 number/string 混存，避免 /song/1 查不到 id:"1"。
+  if (numericId) {
+    clauses.push({ id: numericId });
+    clauses.push({ id: String(numericId) });
+  }
+  clauses.push({ id });
   if (ObjectId.isValid(id)) clauses.push({ _id: new ObjectId(id) });
   const doc = await collection.findOne({ $or: clauses });
   if (!doc) return null;
