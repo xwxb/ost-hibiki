@@ -57,12 +57,10 @@ interface CounterDoc {
 ```js
 db.counters.updateOne(
   { _id: "songs" },
-  { $max: { seq: 99999 } },
+  { $max: { seq: 100000 } },
   { upsert: true }
 );
 ```
-
-之后 `getNextSongId` 第一次自增即返回 100000。代码不主动写入此值，避免本地 / 测试环境被意外抬高。
 
 ## 最小校验
 
@@ -83,10 +81,3 @@ db.counters.updateOne(
 2. 服务端强制 `status="pending"`，`id` 走 counter 自增。
 3. 接口含 IP 限流：10 分钟最多 5 次（进程内，未来切 upstash）。
 4. 审批暂无后台界面，直接在 mongo 把 `status` 改 `approved` 即可对外可见。
-
-## 暂时不做
-
-1. 不做专辑模型。
-2. 不做通用媒体源抽象。
-3. Bangumi 数据后续按需抓取，不做全量同步。
-4. 不做审批后台 UI / 鉴权（用 Mongo Compass 手动操作）。
