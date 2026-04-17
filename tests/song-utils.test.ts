@@ -10,7 +10,8 @@ const baseSong: OstSongItem = {
   media_urls: {
     ytb_url: "https://www.youtube.com/watch?v=a"
   },
-  img_urls: ["https://img.example.com/1.jpg"]
+  img_urls: ["https://img.example.com/1.jpg"],
+  status: "approved"
 };
 
 describe("song-utils", () => {

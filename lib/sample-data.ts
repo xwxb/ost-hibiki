@@ -18,6 +18,7 @@ export const sampleSongs: OstSongItem[] = [
       "https://pub-141831e61e69445289222976a15b6fb3.r2.dev/Image_to_url_V2/-----imagetourl.cloud-1772422628953-yldnge.png",
       "https://s3.bmp.ovh/2026/04/12/n8kX2TYd.png"
     ],
+    status: "approved",
     extras: {
       prototype: true
     }
