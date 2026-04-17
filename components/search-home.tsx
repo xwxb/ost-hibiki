@@ -130,7 +130,7 @@ export function SearchHome() {
   const [importFeedback, setImportFeedback] = useState<(ImportResult & { isError?: boolean }) | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestSeqRef = useRef(0);
   const lastRequestedQueryRef = useRef<string | null>(null);
 
@@ -141,7 +141,7 @@ export function SearchHome() {
     setIsPending(true);
     triggerRemoteLoad("");
     return () => {
-      clearTimeout(debounceRef.current);
+      if (debounceRef.current !== null) clearTimeout(debounceRef.current);
       abortRef.current?.abort();
     };
   }, []);
@@ -202,7 +202,7 @@ export function SearchHome() {
   function handleSearch(value: string) {
     setQuery(value);
     setPage(1);
-    clearTimeout(debounceRef.current);
+    if (debounceRef.current !== null) clearTimeout(debounceRef.current);
     setIsPending(true);
     debounceRef.current = setTimeout(() => {
       triggerRemoteLoad(value);
