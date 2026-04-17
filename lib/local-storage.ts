@@ -12,6 +12,7 @@
 import { parseSong, type OstSongItem } from "./schema";
 
 export const TEMP_SONGS_KEY = "ost_hibiki_temp_songs";
+export const SUBMITTED_LOCAL_SONG_IDS_KEY = "ost_hibiki_submitted_local_song_ids";
 
 export type ImportResult = {
   added: number;
@@ -72,6 +73,33 @@ export function removeLocalSong(id: string | number): OstSongItem[] {
 export function replaceAllLocalSongs(items: OstSongItem[]): OstSongItem[] {
   saveLocalSongs(items);
   return items;
+}
+
+export function getSubmittedLocalSongIds(): string[] {
+  if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(SUBMITTED_LOCAL_SONG_IDS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((id) => String(id)).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function saveSubmittedLocalSongIds(ids: string[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(SUBMITTED_LOCAL_SONG_IDS_KEY, JSON.stringify(ids));
+}
+
+export function markLocalSongSubmitted(id: string | number): string[] {
+  const key = String(id);
+  const current = getSubmittedLocalSongIds();
+  if (current.includes(key)) return current;
+  const next = [key, ...current];
+  saveSubmittedLocalSongIds(next);
+  return next;
 }
 
 /**

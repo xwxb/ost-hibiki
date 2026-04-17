@@ -1,64 +1,61 @@
 "use client";
 
-/**
- * 首页：搜索 + 临时曲目管理 + 云端投稿。
- *
- * 模块拆分：
- * 1. 搜索 / 分页：和后端只在 q 变化时拉取（现保持简单实现）。
- * 2. 临时曲目（localStorage）：增 / 改 / 删 / 导入 / 导出。
- * 3. 云端投稿：复用同一表单，按下「提交云端审核」走 POST /api/songs，
- *    成功后同时落一份到 localStorage，避免用户刷新就找不到。
- */
-
 import Link from "next/link";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   addLocalSong,
   exportLocalSongsJson,
   getLocalSongs,
+  getSubmittedLocalSongIds,
   importLocalSongsFromJson,
+  markLocalSongSubmitted,
   removeLocalSong,
   updateLocalSong,
   type ImportResult
 } from "@/lib/local-storage";
 import { usePreloadImages } from "@/lib/image-preloader";
+import { handleImgError } from "@/lib/image-fallback";
 import { parseSong, songSubmissionSchema, type OstSongItem } from "@/lib/schema";
 import { filterSongs, mergeSongs } from "@/lib/song-utils";
-import { handleImgError } from "@/lib/image-fallback";
 import { ImageUrlListEditor } from "./image-url-list-editor";
 
+type SongsResponse = { items: OstSongItem[] };
 
-//=== 表单类型与初始值
+type SourceField = "ytb_url" | "bili_url" | "netease_url";
+
 type FormState = {
   song_title: string;
   subtitle: string;
   tags: string;
   composer: string;
-  ytb_url: string;
-  bili_url: string;
-  netease_url: string;
-  img_urls: string[];
   bangumi_id: string;
+  img_urls: string[];
+  media_urls: Record<SourceField, string>;
 };
+
+const SOURCE_OPTIONS: Array<{ key: SourceField; label: string }> = [
+  { key: "ytb_url", label: "YouTube" },
+  { key: "bili_url", label: "Bilibili" },
+  { key: "netease_url", label: "Netease" }
+];
 
 const EMPTY_FORM: FormState = {
   song_title: "",
   subtitle: "",
   tags: "",
   composer: "",
-  ytb_url: "",
-  bili_url: "",
-  netease_url: "",
+  bangumi_id: "",
   img_urls: [],
-  bangumi_id: ""
+  media_urls: {
+    ytb_url: "",
+    bili_url: "",
+    netease_url: ""
+  }
 };
 
-type SongsResponse = { items: OstSongItem[] };
 const PAGE_SIZE = 9;
 const DEBOUNCE_MS = 300;
 
-
-//=== 工具函数
 function sourceCount(song: OstSongItem) {
   return [song.media_urls.ytb_url, song.media_urls.bili_url, song.media_urls.netease_url].filter(Boolean).length;
 }
@@ -67,7 +64,6 @@ function isLocalSong(song: OstSongItem) {
   return typeof song.id === "string" && song.id.startsWith("temp-");
 }
 
-// 把 zod issues 拍平到 fieldErrors map：以顶层字段名作 key，仅取首个错误。
 function flattenIssues(issues: Array<{ path: (string | number)[]; message: string }>): Record<string, string> {
   const map: Record<string, string> = {};
   for (const issue of issues) {
@@ -77,7 +73,6 @@ function flattenIssues(issues: Array<{ path: (string | number)[]; message: strin
   return map;
 }
 
-// 把表单 state 转成可被 schema 校验的对象（不含 id/status）。
 function buildSubmissionPayload(form: FormState) {
   return {
     song_title: form.song_title,
@@ -86,58 +81,83 @@ function buildSubmissionPayload(form: FormState) {
     composer: form.composer || undefined,
     bangumi_id: form.bangumi_id ? Number(form.bangumi_id) : undefined,
     media_urls: {
-      ytb_url: form.ytb_url || undefined,
-      bili_url: form.bili_url || undefined,
-      netease_url: form.netease_url || undefined
+      ytb_url: form.media_urls.ytb_url || undefined,
+      bili_url: form.media_urls.bili_url || undefined,
+      netease_url: form.media_urls.netease_url || undefined
     },
     img_urls: form.img_urls.map((url) => url.trim()).filter(Boolean)
   };
 }
 
-// 把已有 song 反向回填到表单（编辑模式用）。
 function songToForm(song: OstSongItem): FormState {
   return {
     song_title: song.song_title,
     subtitle: song.subtitle ?? "",
     tags: song.tags.join(","),
     composer: song.composer ?? "",
-    ytb_url: song.media_urls.ytb_url ?? "",
-    bili_url: song.media_urls.bili_url ?? "",
-    netease_url: song.media_urls.netease_url ?? "",
+    bangumi_id: song.bangumi_id ? String(song.bangumi_id) : "",
     img_urls: [...song.img_urls],
-    bangumi_id: song.bangumi_id ? String(song.bangumi_id) : ""
+    media_urls: {
+      ytb_url: song.media_urls.ytb_url ?? "",
+      bili_url: song.media_urls.bili_url ?? "",
+      netease_url: song.media_urls.netease_url ?? ""
+    }
   };
 }
 
+function payloadFromSong(song: OstSongItem) {
+  return {
+    song_title: song.song_title,
+    subtitle: song.subtitle || undefined,
+    tags: song.tags,
+    composer: song.composer || undefined,
+    bangumi_id: song.bangumi_id,
+    media_urls: song.media_urls,
+    img_urls: song.img_urls
+  };
+}
+
+function labelBySource(key: SourceField) {
+  return SOURCE_OPTIONS.find((option) => option.key === key)?.label ?? key;
+}
+
+function safeErrorMessage(status: number): string {
+  if (status === 429) return "发布次数达到上限，请稍后再试。";
+  if (status === 503) return "服务暂时不可用，请稍后再试。";
+  if (status >= 500) return "服务忙，请稍后重试。";
+  return "发布失败，请检查后重试。";
+}
 
 export function SearchHome() {
-  //=== 列表 / 搜索状态
   const [query, setQuery] = useState("");
   const [remoteSongs, setRemoteSongs] = useState<OstSongItem[]>([]);
   const [localSongs, setLocalSongs] = useState<OstSongItem[]>([]);
+  const [submittedLocalIds, setSubmittedLocalIds] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [isPending, setIsPending] = useState(false);
   const deferredQuery = useDeferredValue(query);
 
-
-  //=== 表单 / 编辑模式
   const [showTempForm, setShowTempForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [importFeedback, setImportFeedback] = useState<(ImportResult & { isError?: boolean }) | null>(null);
+  const [publishFeedback, setPublishFeedback] = useState<Record<string, string>>({});
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [showOptional, setShowOptional] = useState(false);
+  const [sourceDraftKey, setSourceDraftKey] = useState<SourceField>("ytb_url");
+  const [sourceDraftUrl, setSourceDraftUrl] = useState("");
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestSeqRef = useRef(0);
   const lastRequestedQueryRef = useRef<string | null>(null);
 
-
-  //=== 初始化 & 派生
   useEffect(() => {
     setLocalSongs(getLocalSongs());
+    setSubmittedLocalIds(new Set(getSubmittedLocalSongIds()));
     setIsPending(true);
     triggerRemoteLoad("");
     return () => {
@@ -161,14 +181,13 @@ export function SearchHome() {
     const start = (safePage - 1) * PAGE_SIZE;
     return songs.slice(start, start + PAGE_SIZE);
   }, [safePage, songs]);
-  const hasQuery = query.trim().length > 0;
 
   const nextPageStart = safePage * PAGE_SIZE;
   usePreloadImages(pagedSongs.map((song) => song.img_urls[0]).filter(Boolean), "high");
   usePreloadImages(songs.slice(nextPageStart, nextPageStart + PAGE_SIZE).map((song) => song.img_urls[0]).filter(Boolean), "low");
 
+  const hasQuery = query.trim().length > 0;
 
-  //=== 后端 / 搜索
   async function loadRemote(q: string, signal: AbortSignal, requestSeq: number) {
     try {
       const response = await fetch(`/api/songs?q=${encodeURIComponent(q)}`, { cache: "no-store", signal });
@@ -209,8 +228,6 @@ export function SearchHome() {
     }, DEBOUNCE_MS);
   }
 
-
-  //=== 表单基础操作
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
     if (fieldErrors[key as string]) {
@@ -222,11 +239,31 @@ export function SearchHome() {
     }
   }
 
+  function updateMediaField(key: SourceField, value: string) {
+    setForm((current) => ({
+      ...current,
+      media_urls: {
+        ...current.media_urls,
+        [key]: value
+      }
+    }));
+    if (fieldErrors.media_urls) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next.media_urls;
+        return next;
+      });
+    }
+  }
+
   function resetForm() {
     setForm(EMPTY_FORM);
     setFieldErrors({});
     setFormError("");
     setEditingId(null);
+    setShowOptional(false);
+    setSourceDraftKey("ytb_url");
+    setSourceDraftUrl("");
   }
 
   function openCreate() {
@@ -237,18 +274,18 @@ export function SearchHome() {
   function startEdit(song: OstSongItem) {
     setForm(songToForm(song));
     setEditingId(String(song.id));
+    setShowOptional(Boolean(song.subtitle || song.composer || song.bangumi_id || song.tags.length));
     setFieldErrors({});
     setFormError("");
     setShowTempForm(true);
   }
 
-  // 表单校验：返回校验后的 payload，若失败设置 fieldErrors 并返回 null。
   function validateForm(): ReturnType<typeof buildSubmissionPayload> | null {
     const payload = buildSubmissionPayload(form);
     const result = songSubmissionSchema.safeParse(payload);
     if (!result.success) {
       setFieldErrors(flattenIssues(result.error.issues));
-      setFormError("请修正标红字段后再提交");
+      setFormError("请先修正必填项后再保存。");
       return null;
     }
     setFieldErrors({});
@@ -256,8 +293,6 @@ export function SearchHome() {
     return payload;
   }
 
-
-  //=== 本地保存（创建 / 编辑）
   function handleSaveLocal(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const payload = validateForm();
@@ -270,6 +305,7 @@ export function SearchHome() {
         const draft = parseSong({ ...payload, id: `temp-${crypto.randomUUID()}` });
         setLocalSongs(addLocalSong(draft));
       }
+      setFormError("");
       resetForm();
       setShowTempForm(false);
     } catch (err) {
@@ -277,8 +313,46 @@ export function SearchHome() {
     }
   }
 
+  async function handlePublishLocal(song: OstSongItem) {
+    const key = String(song.id);
+    if (!isLocalSong(song) || submittedLocalIds.has(key) || publishingId) return;
 
-  //=== 本地删除
+    const parsed = songSubmissionSchema.safeParse(payloadFromSong(song));
+    if (!parsed.success) {
+      setPublishFeedback((prev) => ({ ...prev, [key]: "该条目不满足发布要求，请先编辑补全。" }));
+      return;
+    }
+
+    setPublishingId(key);
+    setPublishFeedback((prev) => ({ ...prev, [key]: "发布中..." }));
+    try {
+      const response = await fetch("/api/songs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(parsed.data)
+      });
+
+      if (!response.ok) {
+        const retryAfter = response.headers.get("retry-after");
+        const retryTip = response.status === 429 && retryAfter ? `（约 ${Math.ceil(Number(retryAfter) / 60)} 分钟后可再试）` : "";
+        setPublishFeedback((prev) => ({ ...prev, [key]: `${safeErrorMessage(response.status)}${retryTip}` }));
+        return;
+      }
+
+      const data = (await response.json().catch(() => ({}))) as { deduped?: boolean };
+      const next = markLocalSongSubmitted(song.id);
+      setSubmittedLocalIds(new Set(next));
+      setPublishFeedback((prev) => ({
+        ...prev,
+        [key]: data?.deduped ? "云端已有同条目，已自动去重。" : "已提交云端审核。"
+      }));
+    } catch {
+      setPublishFeedback((prev) => ({ ...prev, [key]: "网络异常，请稍后重试。" }));
+    } finally {
+      setPublishingId(null);
+    }
+  }
+
   function handleDeleteLocal(song: OstSongItem) {
     if (!isLocalSong(song)) return;
     if (!confirm(`确认删除本地曲目「${song.song_title}」？`)) return;
@@ -286,46 +360,6 @@ export function SearchHome() {
     if (editingId === String(song.id)) resetForm();
   }
 
-
-  //=== 云端投稿
-  async function handleSubmitCloud() {
-    const payload = validateForm();
-    if (!payload) return;
-    setSubmitting(true);
-    try {
-      const response = await fetch("/api/songs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      if (response.status === 429) {
-        setFormError("提交过于频繁，请稍后再试");
-        return;
-      }
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        setFormError(typeof data?.error === "string" ? data.error : `提交失败（${response.status}）`);
-        return;
-      }
-      // 提交成功：同时落一份到本地，让当前浏览器立即可见，避免审核期间空窗
-      try {
-        const local = parseSong({ ...payload, id: `temp-${crypto.randomUUID()}` });
-        setLocalSongs(addLocalSong(local));
-      } catch {
-        // 本地落库失败不影响主流程
-      }
-      resetForm();
-      setShowTempForm(false);
-      alert("已提交云端，待管理员审核通过后将公开展示。");
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "网络错误");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-
-  //=== 导入 / 导出
   function handleExport() {
     const blob = new Blob([exportLocalSongsJson()], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -356,8 +390,31 @@ export function SearchHome() {
     }
   }
 
+  function upsertSourceDraft() {
+    const nextUrl = sourceDraftUrl.trim();
+    if (!nextUrl) return;
+    try {
+      new URL(nextUrl);
+    } catch {
+      setFormError("媒体链接格式不正确，请输入完整 URL。");
+      return;
+    }
+    updateMediaField(sourceDraftKey, nextUrl);
+    setSourceDraftUrl("");
+    setFormError("");
+  }
 
-  //=== 渲染
+  function editSourceDraft(key: SourceField) {
+    setSourceDraftKey(key);
+    setSourceDraftUrl(form.media_urls[key]);
+  }
+
+  function removeSourceDraft(key: SourceField) {
+    updateMediaField(key, "");
+  }
+
+  const activeSources = SOURCE_OPTIONS.filter((item) => Boolean(form.media_urls[item.key]));
+
   return (
     <main className="search-page">
       <div className="search-ambient" />
@@ -377,79 +434,17 @@ export function SearchHome() {
             />
             <span>{isPending ? "Searching..." : `${songs.length} songs`}</span>
           </div>
-          <button
-            className="temp-entry-trigger"
-            onClick={() => (showTempForm ? (resetForm(), setShowTempForm(false)) : openCreate())}
-          >
-            {showTempForm ? "收起表单" : "添加临时曲目"}
+          <button className="temp-entry-trigger" onClick={() => (showTempForm ? setShowTempForm(false) : openCreate())}>
+            {showTempForm ? "收起表单" : "新增本地条目"}
           </button>
         </div>
 
-        <div className="song-grid">
-          {pagedSongs.map((song, index) => (
-            <div key={String(song.id)} className="song-card-wrap">
-              <Link href={`/song/${song.id}`} className="song-card">
-                <img
-                  src={song.img_urls[0]}
-                  alt={song.song_title}
-                  onError={handleImgError}
-                  decoding="async"
-                  loading={index < 3 ? "eager" : "lazy"}
-                  fetchPriority={index < 3 ? "high" : "low"}
-                />
-                <div className="song-card-body">
-                  <div className="song-card-topline">
-                    <span>{sourceCount(song)} sources</span>
-                    {isLocalSong(song) ? <span className="song-card-badge">Local</span> : null}
-                  </div>
-                  <h2>{song.song_title}</h2>
-                  <p>{song.subtitle ?? " "}</p>
-                  <div className="song-card-meta">
-                    <span>{song.composer ?? "Unknown composer"}</span>
-                  </div>
-                  <div className="tags">
-                    {song.tags.slice(0, 3).map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </div>
-                </div>
-              </Link>
-              {isLocalSong(song) ? (
-                <div className="song-card-actions">
-                  <button type="button" title="编辑" onClick={() => startEdit(song)}>✎</button>
-                  <button type="button" title="删除" onClick={() => handleDeleteLocal(song)}>✕</button>
-                </div>
-              ) : null}
-            </div>
-          ))}
-          {songs.length === 0 ? (
-            <div className="empty-tip">
-              <strong>{hasQuery ? "没有找到匹配曲目" : "还没有可展示的曲目"}</strong>
-              <p>{hasQuery ? "换一个标题、标签或副标题关键词试试。" : "连接 Mongo 后会显示正式数据，也可以先添加本地临时曲目。"}</p>
-            </div>
-          ) : null}
-        </div>
-
-        {songs.length > PAGE_SIZE ? (
-          <div className="pager">
-            <button disabled={safePage === 1} onClick={() => setPage(Math.max(1, safePage - 1))}>
-              Prev
-            </button>
-            <span>
-              {safePage} / {totalPages}
-            </span>
-            <button disabled={safePage === totalPages} onClick={() => setPage(Math.min(totalPages, safePage + 1))}>
-              Next
-            </button>
-          </div>
-        ) : null}
-
         {showTempForm ? (
-          <form className="temp-form" onSubmit={handleSaveLocal}>
+          <form className="temp-form temp-form-inline" onSubmit={handleSaveLocal}>
             <div className="temp-form-head">
               <div>
-                <h3>{editingId ? "Edit Local Entry" : "Temporary Entry"}</h3>
-                <p>{editingId ? "更新已有本地曲目。" : "默认仅存浏览器；提交云端将进入待审。"}</p>
+                <h3>{editingId ? "编辑本地条目" : "创建本地条目"}</h3>
+                <p>流程固定为先存本地，再从卡片操作发布到云端。</p>
               </div>
               <div className="temp-form-actions">
                 <button type="button" className="btn-ghost" onClick={handleExport}>导出 JSON</button>
@@ -478,42 +473,46 @@ export function SearchHome() {
                 placeholder="song_title*"
                 className={fieldErrors.song_title ? "is-invalid" : ""}
               />
-              <input value={form.subtitle} onChange={(e) => updateField("subtitle", e.target.value)} placeholder="subtitle" />
-              <input value={form.tags} onChange={(e) => updateField("tags", e.target.value)} placeholder="tags: a,b,c" />
+              <input
+                value={form.tags}
+                onChange={(e) => updateField("tags", e.target.value)}
+                placeholder="tags: a,b,c"
+              />
             </div>
             {fieldErrors.song_title ? <p className="field-error">song_title：{fieldErrors.song_title}</p> : null}
 
-            <div className="form-grid form-grid-secondary">
-              <input value={form.composer} onChange={(e) => updateField("composer", e.target.value)} placeholder="composer" />
-              <input
-                value={form.ytb_url}
-                onChange={(e) => updateField("ytb_url", e.target.value)}
-                placeholder="ytb_url"
-                className={fieldErrors.media_urls ? "is-invalid" : ""}
-              />
-              <input
-                value={form.bili_url}
-                onChange={(e) => updateField("bili_url", e.target.value)}
-                placeholder="bili_url"
-                className={fieldErrors.media_urls ? "is-invalid" : ""}
-              />
+            <div className="source-editor">
+              <label className="field-label">media_urls *</label>
+              <div className="source-editor-row">
+                <select value={sourceDraftKey} onChange={(e) => setSourceDraftKey(e.target.value as SourceField)}>
+                  {SOURCE_OPTIONS.map((option) => (
+                    <option value={option.key} key={option.key}>{option.label}</option>
+                  ))}
+                </select>
+                <input
+                  value={sourceDraftUrl}
+                  onChange={(e) => setSourceDraftUrl(e.target.value)}
+                  placeholder="https://..."
+                  className={fieldErrors.media_urls ? "is-invalid" : ""}
+                />
+                <button type="button" className="btn-secondary" onClick={upsertSourceDraft}>添加/更新</button>
+              </div>
+              <div className="source-chips">
+                {activeSources.length ? (
+                  activeSources.map((source) => (
+                    <div className="source-chip" key={source.key}>
+                      <strong>{source.label}</strong>
+                      <span>{form.media_urls[source.key]}</span>
+                      <button type="button" onClick={() => editSourceDraft(source.key)}>改</button>
+                      <button type="button" onClick={() => removeSourceDraft(source.key)}>删</button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="source-empty">至少添加一个可播放来源。</p>
+                )}
+              </div>
+              {fieldErrors.media_urls ? <p className="field-error">media_urls：{fieldErrors.media_urls}</p> : null}
             </div>
-
-            <div className="form-grid form-grid-secondary">
-              <input
-                value={form.netease_url}
-                onChange={(e) => updateField("netease_url", e.target.value)}
-                placeholder="netease_url"
-                className={fieldErrors.media_urls ? "is-invalid" : ""}
-              />
-              <input
-                value={form.bangumi_id}
-                onChange={(e) => updateField("bangumi_id", e.target.value)}
-                placeholder="bangumi_id"
-              />
-              <div />
-            </div>
-            {fieldErrors.media_urls ? <p className="field-error">media_urls：{fieldErrors.media_urls}</p> : null}
 
             <label className="field-label">img_urls *</label>
             <ImageUrlListEditor
@@ -523,15 +522,20 @@ export function SearchHome() {
             />
             {fieldErrors.img_urls ? <p className="field-error">img_urls：{fieldErrors.img_urls}</p> : null}
 
+            <button type="button" className="optional-toggle" onClick={() => setShowOptional((open) => !open)}>
+              {showOptional ? "收起可选字段" : "展开可选字段"}
+            </button>
+
+            {showOptional ? (
+              <div className="form-grid form-grid-optional">
+                <input value={form.subtitle} onChange={(e) => updateField("subtitle", e.target.value)} placeholder="subtitle" />
+                <input value={form.composer} onChange={(e) => updateField("composer", e.target.value)} placeholder="composer" />
+                <input value={form.bangumi_id} onChange={(e) => updateField("bangumi_id", e.target.value)} placeholder="bangumi_id" />
+              </div>
+            ) : null}
+
             <div className="temp-form-actions">
-              <button type="submit" disabled={submitting}>
-                {editingId ? "保存修改" : "保存到 localStorage"}
-              </button>
-              {!editingId ? (
-                <button type="button" className="btn-secondary" onClick={handleSubmitCloud} disabled={submitting}>
-                  {submitting ? "提交中..." : "提交云端审核"}
-                </button>
-              ) : null}
+              <button type="submit">{editingId ? "保存修改" : "保存到本地"}</button>
               {editingId ? (
                 <button type="button" className="btn-ghost" onClick={() => { resetForm(); setShowTempForm(false); }}>
                   取消编辑
@@ -540,6 +544,81 @@ export function SearchHome() {
             </div>
             {formError ? <p className="form-error">{formError}</p> : null}
           </form>
+        ) : null}
+
+        <div className="song-grid">
+          {pagedSongs.map((song, index) => {
+            const key = String(song.id);
+            const local = isLocalSong(song);
+            const submitted = submittedLocalIds.has(key);
+            const publishing = publishingId === key;
+            return (
+              <div key={key} className="song-card-wrap">
+                <Link href={`/song/${song.id}`} className="song-card">
+                  <img
+                    src={song.img_urls[0]}
+                    alt={song.song_title}
+                    onError={handleImgError}
+                    decoding="async"
+                    loading={index < 3 ? "eager" : "lazy"}
+                    fetchPriority={index < 3 ? "high" : "low"}
+                  />
+                  <div className="song-card-body">
+                    <div className="song-card-topline">
+                      <span>{sourceCount(song)} sources</span>
+                      {local ? <span className="song-card-badge">Local</span> : null}
+                      {local && submitted ? <span className="song-card-badge">Published</span> : null}
+                    </div>
+                    <h2>{song.song_title}</h2>
+                    <p>{song.subtitle ?? " "}</p>
+                    <div className="song-card-meta">
+                      <span>{song.composer ?? "Unknown composer"}</span>
+                    </div>
+                    <div className="tags">
+                      {song.tags.slice(0, 3).map((tag) => (
+                        <span key={tag}>{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                </Link>
+                {local ? (
+                  <div className="song-card-actions">
+                    <button type="button" title="编辑" onClick={() => startEdit(song)}>✎</button>
+                    <button
+                      type="button"
+                      title={submitted ? "已发布" : "发布到云端"}
+                      onClick={() => void handlePublishLocal(song)}
+                      disabled={submitted || publishing}
+                    >
+                      {publishing ? "…" : "⇪"}
+                    </button>
+                    <button type="button" title="删除" onClick={() => handleDeleteLocal(song)}>✕</button>
+                  </div>
+                ) : null}
+                {local && publishFeedback[key] ? <p className="publish-feedback">{publishFeedback[key]}</p> : null}
+              </div>
+            );
+          })}
+          {songs.length === 0 ? (
+            <div className="empty-tip">
+              <strong>{hasQuery ? "没有找到匹配曲目" : "还没有可展示的曲目"}</strong>
+              <p>{hasQuery ? "换一个关键词试试。" : "先创建一个本地条目开始整理吧。"}</p>
+            </div>
+          ) : null}
+        </div>
+
+        {songs.length > PAGE_SIZE ? (
+          <div className="pager">
+            <button disabled={safePage === 1} onClick={() => setPage(Math.max(1, safePage - 1))}>
+              Prev
+            </button>
+            <span>
+              {safePage} / {totalPages}
+            </span>
+            <button disabled={safePage === totalPages} onClick={() => setPage(Math.min(totalPages, safePage + 1))}>
+              Next
+            </button>
+          </div>
         ) : null}
       </section>
     </main>

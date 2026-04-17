@@ -26,14 +26,14 @@ function clientIp(request: NextRequest): string {
   return request.headers.get("x-real-ip") ?? "unknown";
 }
 
-const SUBMIT_WINDOW_MS = 10 * 60 * 1000;
+const SUBMIT_WINDOW_MS = 30 * 60 * 1000;
 const SUBMIT_MAX = 5;
 
 /**
  * 用户云端投稿入口。
  * - 服务端强制 status=pending
- * - 简单 IP 限流 10 分钟 5 次（见 lib/rate-limit.ts）
- * - mongo 不可用时返回 503，避免静默丢弃
+ * - 简单 IP 限流 30 分钟 5 次（见 lib/rate-limit.ts）
+ * - DB 不可用时返回 503，避免静默丢弃
  */
 export async function POST(request: NextRequest) {
   const ip = clientIp(request);
@@ -65,9 +65,12 @@ export async function POST(request: NextRequest) {
   try {
     const created = await createPendingSong(parsed);
     if (!created) {
-      return NextResponse.json({ error: "数据库未配置，无法接收投稿" }, { status: 503 });
+      return NextResponse.json({ error: "服务暂不可用，请稍后再试" }, { status: 503 });
     }
-    return NextResponse.json({ ok: true, id: created.id, status: "pending" }, { status: 201 });
+    if (created.deduped) {
+      return NextResponse.json({ ok: true, deduped: true, id: created.id, status: created.status }, { status: 200 });
+    }
+    return NextResponse.json({ ok: true, deduped: false, id: created.id, status: created.status }, { status: 201 });
   } catch (err) {
     console.error("[api/songs POST] insert failed", err);
     return NextResponse.json({ error: "写入失败" }, { status: 500 });

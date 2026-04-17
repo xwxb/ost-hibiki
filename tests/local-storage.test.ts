@@ -23,11 +23,14 @@ const memoryStorage = new MemoryStorage();
   localStorage: memoryStorage
 };
 import {
+  SUBMITTED_LOCAL_SONG_IDS_KEY,
   TEMP_SONGS_KEY,
   addLocalSong,
   exportLocalSongsJson,
   getLocalSongs,
+  getSubmittedLocalSongIds,
   importLocalSongsFromJson,
+  markLocalSongSubmitted,
   removeLocalSong,
   updateLocalSong
 } from "@/lib/local-storage";
@@ -128,5 +131,14 @@ describe("local-storage CRUD", () => {
     const result = importLocalSongsFromJson("not-json");
     expect(result.added).toBe(0);
     expect(result.errors).toHaveLength(1);
+  });
+
+  it("marks submitted local songs without duplicates", () => {
+    const first = markLocalSongSubmitted("temp-a");
+    expect(first).toEqual(["temp-a"]);
+    const second = markLocalSongSubmitted("temp-a");
+    expect(second).toEqual(["temp-a"]);
+    expect(getSubmittedLocalSongIds()).toEqual(["temp-a"]);
+    expect(memoryStorage.getItem(SUBMITTED_LOCAL_SONG_IDS_KEY)).toBe(JSON.stringify(["temp-a"]));
   });
 });

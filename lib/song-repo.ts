@@ -3,6 +3,7 @@ import { ObjectId } from "mongodb";
 import { getMongoClient } from "./mongo";
 import { parseSong, type OstSongItem, type SongSubmissionInput } from "./schema";
 import { sampleSongs } from "./sample-data";
+import { isDuplicateSubmission } from "./submission-dedupe";
 import { buildSongQuery, filterSongs, type SongFilter } from "./song-utils";
 
 const DB_NAME = process.env.MONGODB_DB ?? "ost_hibiki";
@@ -147,17 +148,38 @@ export async function getSongById(id: string): Promise<OstSongItem | null> {
  * 用户云端投稿写入：强制 status=pending，id 走自增。
  * 失败抛错由路由层统一兜底返回 500。
  */
-export async function createPendingSong(input: SongSubmissionInput): Promise<{ id: number } | null> {
+export async function createPendingSong(
+  input: SongSubmissionInput
+): Promise<{ id: number | string; deduped: boolean; status: "pending" | "approved" | "rejected" } | null> {
   const client = await getMongoClient();
   if (!client) return null;
 
   const db = client.db(DB_NAME);
   const collection = db.collection<RawSongDoc>(COLLECTION);
+  const sameTitleDocs = await collection
+    .find({ song_title: new RegExp(`^${input.song_title.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") })
+    .limit(50)
+    .toArray();
+  const duplicated = sameTitleDocs.find((doc) => isDuplicateSubmission(doc, input));
+  if (duplicated) {
+    const objectId = duplicated._id instanceof ObjectId ? duplicated._id.toHexString() : typeof duplicated._id === "string" ? duplicated._id : "";
+    const duplicatedId =
+      parseNumericId(duplicated.id) ??
+      (typeof duplicated.id === "string" && duplicated.id.trim() ? duplicated.id : objectId);
+    if (duplicatedId) {
+      return {
+        id: duplicatedId,
+        deduped: true,
+        status: duplicated.status === "pending" || duplicated.status === "rejected" ? duplicated.status : "approved"
+      };
+    }
+  }
+
   const id = await getNextSongId(db);
   await collection.insertOne({
     ...input,
     id,
     status: "pending"
   } as RawSongDoc);
-  return { id };
+  return { id, deduped: false, status: "pending" };
 }
