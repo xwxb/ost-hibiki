@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { OstSongItem } from "@/lib/schema";
 import { buildEmbedUrl } from "@/lib/media";
+import { useCarouselPreload } from "@/lib/image-preloader";
 import { handleImgError } from "@/lib/image-fallback";
 
 type SourceType = "youtube" | "bilibili" | "netease";
@@ -69,7 +70,6 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   const [legalOpen, setLegalOpen] = useState(false);
   const [idle, setIdle] = useState(false);
   const [centerHover, setCenterHover] = useState(false);
-  const [playerNonce, setPlayerNonce] = useState(0);
   const [prevImage, setPrevImage] = useState<string | null>(null);
 
   const sources = useMemo(() => sourceOrder(song), [song]);
@@ -77,10 +77,23 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
 
   const activeImage = song.img_urls[frameIndex] ?? song.img_urls[0];
   const prevImageRef = useRef(activeImage);
-  if (prevImageRef.current !== activeImage) {
-    setPrevImage(prevImageRef.current);
-    prevImageRef.current = activeImage;
-  }
+  const rafRef = useRef(0);
+  const wakeRafRef = useRef(0);
+  const idleTimerRef = useRef<number | null>(null);
+  const idleStateRef = useRef(false);
+
+  useCarouselPreload(song.img_urls, frameIndex);
+
+  useEffect(() => {
+    if (prevImageRef.current !== activeImage) {
+      setPrevImage(prevImageRef.current);
+      prevImageRef.current = activeImage;
+    }
+  }, [activeImage]);
+
+  useEffect(() => {
+    idleStateRef.current = idle;
+  }, [idle]);
   const frameMotionKey = `${frameIndex}-${activeImage}`;
   const titleParts = splitSongTitle(song.song_title);
   const sourceUrl =
@@ -89,6 +102,11 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
       : source === "bilibili"
         ? song.media_urls.bili_url
         : song.media_urls.netease_url;
+
+  const embedUrl = useMemo(() => {
+    if (!sourceUrl) return null;
+    return buildEmbedUrl(source, sourceUrl, source === "youtube");
+  }, [source, sourceUrl]);
 
   useEffect(() => {
     document.title = `${song.song_title} | OST Hibiki`;
@@ -111,11 +129,21 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   useEffect(() => {
     if (mode !== "immersive") return;
     const wake = () => {
-      setIdle(false);
-      window.clearTimeout((window as Window & { __idle_timer?: number }).__idle_timer);
-      (window as Window & { __idle_timer?: number }).__idle_timer = window.setTimeout(() => {
-        if (playing) setIdle(true);
-      }, 2500);
+      if (wakeRafRef.current) return;
+      wakeRafRef.current = requestAnimationFrame(() => {
+        wakeRafRef.current = 0;
+        if (idleStateRef.current) {
+          idleStateRef.current = false;
+          setIdle(false);
+        }
+        if (idleTimerRef.current !== null) window.clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = window.setTimeout(() => {
+          if (playing) {
+            idleStateRef.current = true;
+            setIdle(true);
+          }
+        }, 2500);
+      });
     };
     wake();
     window.addEventListener("mousemove", wake);
@@ -123,7 +151,14 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     return () => {
       window.removeEventListener("mousemove", wake);
       window.removeEventListener("touchstart", wake);
-      window.clearTimeout((window as Window & { __idle_timer?: number }).__idle_timer);
+      if (wakeRafRef.current) {
+        cancelAnimationFrame(wakeRafRef.current);
+        wakeRafRef.current = 0;
+      }
+      if (idleTimerRef.current !== null) {
+        window.clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
     };
   }, [mode, playing]);
 
@@ -150,12 +185,22 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     setExtOpen(true);
   }, [playing, source]);
 
+  useEffect(() => {
+    if (mode === "immersive") return;
+    idleStateRef.current = false;
+    setIdle(false);
+  }, [mode]);
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      if (wakeRafRef.current) cancelAnimationFrame(wakeRafRef.current);
+      if (idleTimerRef.current !== null) window.clearTimeout(idleTimerRef.current);
+    };
+  }, []);
+
   function togglePlay(force = false) {
-    setPlaying((prev) => {
-      const next = force ? true : !prev;
-      setPlayerNonce((n) => n + 1);
-      return next;
-    });
+    setPlaying(prev => force || !prev);
   }
 
   function onCanvasClick() {
@@ -167,32 +212,28 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     togglePlay();
   }
 
-  function goNextFrame() {
-    setFrameIndex((current) => (current + 1) % song.img_urls.length);
-  }
-
-  function goPrevFrame() {
-    setFrameIndex((current) => (current - 1 + song.img_urls.length) % song.img_urls.length);
-  }
-
   function onCanvasMouseMove(e: React.MouseEvent<HTMLDivElement>) {
-    if (mode !== "immersive") return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const cx = (e.clientX - rect.left) / rect.width;
-    const cy = (e.clientY - rect.top) / rect.height;
-    setCenterHover(cx > 0.3 && cx < 0.7 && cy > 0.3 && cy < 0.7);
+    if (mode !== "immersive" || rafRef.current) return;
+    const { clientX, clientY, currentTarget } = e;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0;
+      const rect = currentTarget.getBoundingClientRect();
+      const cx = (clientX - rect.left) / rect.width;
+      const cy = (clientY - rect.top) / rect.height;
+      const nextHover = cx > 0.3 && cx < 0.7 && cy > 0.3 && cy < 0.7;
+      setCenterHover((prev) => (prev === nextHover ? prev : nextHover));
+    });
   }
 
   function onCanvasMouseLeave() {
-    setCenterHover(false);
+    setCenterHover((prev) => (prev ? false : prev));
   }
 
   function renderPlayer() {
-    if (!sourceUrl) return <p className="player-empty">当前源暂无链接</p>;
-    const embedUrl = buildEmbedUrl(source, sourceUrl, playing && source === "youtube");
+    if (!embedUrl) return <p className="player-empty">当前源暂无链接</p>;
     return (
       <iframe
-        key={`${source}-${playerNonce}-${playing ? "playing" : "paused"}`}
+        key={source}
         src={embedUrl}
         width="100%"
         height="100%"
@@ -228,13 +269,21 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
           <div className="art-canvas" onClick={onCanvasClick} onMouseMove={onCanvasMouseMove} onMouseLeave={onCanvasMouseLeave}>
             {prevImage && prevImage !== activeImage && (
               <div className="frame-layer active">
-                <img className="img-bg" src={prevImage} alt="bg" onError={handleImgError} />
-                <img className="img-fg" src={prevImage} alt="" onError={handleImgError} />
+                <img className="img-bg" src={prevImage} alt="bg" decoding="async" loading="eager" fetchPriority="low" onError={handleImgError} />
+                <img className="img-fg" src={prevImage} alt="" decoding="async" loading="eager" fetchPriority="low" onError={handleImgError} />
               </div>
             )}
             <div key={frameMotionKey} className="frame-layer active frame-layer-animated">
-              <img className="img-bg" src={activeImage} alt="bg" onError={handleImgError} />
-              <img className={`img-fg ${mode === "immersive" && playing ? "zooming" : ""}`} src={activeImage} alt={song.song_title} onError={handleImgError} />
+              <img className="img-bg" src={activeImage} alt="bg" decoding="async" loading="eager" fetchPriority="high" onError={handleImgError} />
+              <img
+                className={`img-fg ${mode === "immersive" && playing ? "zooming" : ""}`}
+                src={activeImage}
+                alt={song.song_title}
+                decoding="async"
+                loading="eager"
+                fetchPriority="high"
+                onError={handleImgError}
+              />
             </div>
             <div className="hover-expand-overlay">
               <div className="glass-play-btn">

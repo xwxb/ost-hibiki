@@ -11,7 +11,7 @@
  */
 
 import Link from "next/link";
-import { useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   addLocalSong,
   exportLocalSongsJson,
@@ -21,6 +21,7 @@ import {
   updateLocalSong,
   type ImportResult
 } from "@/lib/local-storage";
+import { usePreloadImages } from "@/lib/image-preloader";
 import { parseSong, songSubmissionSchema, type OstSongItem } from "@/lib/schema";
 import { filterSongs, mergeSongs } from "@/lib/song-utils";
 import { handleImgError } from "@/lib/image-fallback";
@@ -54,6 +55,7 @@ const EMPTY_FORM: FormState = {
 
 type SongsResponse = { items: OstSongItem[] };
 const PAGE_SIZE = 9;
+const DEBOUNCE_MS = 300;
 
 
 //=== 工具函数
@@ -111,11 +113,10 @@ function songToForm(song: OstSongItem): FormState {
 export function SearchHome() {
   //=== 列表 / 搜索状态
   const [query, setQuery] = useState("");
-  const [songs, setSongs] = useState<OstSongItem[]>([]);
   const [remoteSongs, setRemoteSongs] = useState<OstSongItem[]>([]);
   const [localSongs, setLocalSongs] = useState<OstSongItem[]>([]);
   const [page, setPage] = useState(1);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
   const deferredQuery = useDeferredValue(query);
 
 
@@ -128,17 +129,26 @@ export function SearchHome() {
   const [submitting, setSubmitting] = useState(false);
   const [importFeedback, setImportFeedback] = useState<(ImportResult & { isError?: boolean }) | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const requestSeqRef = useRef(0);
+  const lastRequestedQueryRef = useRef<string | null>(null);
 
 
   //=== 初始化 & 派生
   useEffect(() => {
     setLocalSongs(getLocalSongs());
-    void loadRemote("");
+    setIsPending(true);
+    triggerRemoteLoad("");
+    return () => {
+      clearTimeout(debounceRef.current);
+      abortRef.current?.abort();
+    };
   }, []);
 
-  useEffect(() => {
+  const songs = useMemo(() => {
     const merged = mergeSongs(remoteSongs, localSongs);
-    setSongs(filterSongs(merged, { q: deferredQuery }));
+    return filterSongs(merged, { q: deferredQuery });
   }, [deferredQuery, localSongs, remoteSongs]);
 
   useEffect(() => {
@@ -146,26 +156,57 @@ export function SearchHome() {
   }, [deferredQuery, songs.length]);
 
   const totalPages = Math.max(1, Math.ceil(songs.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
   const pagedSongs = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
+    const start = (safePage - 1) * PAGE_SIZE;
     return songs.slice(start, start + PAGE_SIZE);
-  }, [page, songs]);
+  }, [safePage, songs]);
   const hasQuery = query.trim().length > 0;
+
+  const nextPageStart = safePage * PAGE_SIZE;
+  usePreloadImages(pagedSongs.map((song) => song.img_urls[0]).filter(Boolean), "high");
+  usePreloadImages(songs.slice(nextPageStart, nextPageStart + PAGE_SIZE).map((song) => song.img_urls[0]).filter(Boolean), "low");
 
 
   //=== 后端 / 搜索
-  async function loadRemote(q: string) {
-    const response = await fetch(`/api/songs?q=${encodeURIComponent(q)}`, { cache: "no-store" });
-    if (!response.ok) return;
-    const data = (await response.json()) as SongsResponse;
-    setRemoteSongs(data.items);
+  async function loadRemote(q: string, signal: AbortSignal, requestSeq: number) {
+    try {
+      const response = await fetch(`/api/songs?q=${encodeURIComponent(q)}`, { cache: "no-store", signal });
+      if (!response.ok) return;
+      const data = (await response.json()) as SongsResponse;
+      if (signal.aborted || requestSeq !== requestSeqRef.current) return;
+      setRemoteSongs(data.items);
+    } catch {
+      if (signal.aborted || requestSeq !== requestSeqRef.current) return;
+    } finally {
+      if (!signal.aborted && requestSeq === requestSeqRef.current) {
+        setIsPending(false);
+      }
+    }
+  }
+
+  function triggerRemoteLoad(value: string) {
+    if (value === lastRequestedQueryRef.current) {
+      setIsPending(false);
+      return;
+    }
+    lastRequestedQueryRef.current = value;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const nextSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = nextSeq;
+    void loadRemote(value, controller.signal, nextSeq);
   }
 
   function handleSearch(value: string) {
     setQuery(value);
-    startTransition(() => {
-      void loadRemote(value);
-    });
+    setPage(1);
+    clearTimeout(debounceRef.current);
+    setIsPending(true);
+    debounceRef.current = setTimeout(() => {
+      triggerRemoteLoad(value);
+    }, DEBOUNCE_MS);
   }
 
 
@@ -345,10 +386,17 @@ export function SearchHome() {
         </div>
 
         <div className="song-grid">
-          {pagedSongs.map((song) => (
+          {pagedSongs.map((song, index) => (
             <div key={String(song.id)} className="song-card-wrap">
               <Link href={`/song/${song.id}`} className="song-card">
-                <img src={song.img_urls[0]} alt={song.song_title} onError={handleImgError} />
+                <img
+                  src={song.img_urls[0]}
+                  alt={song.song_title}
+                  onError={handleImgError}
+                  decoding="async"
+                  loading={index < 3 ? "eager" : "lazy"}
+                  fetchPriority={index < 3 ? "high" : "low"}
+                />
                 <div className="song-card-body">
                   <div className="song-card-topline">
                     <span>{sourceCount(song)} sources</span>
@@ -384,13 +432,13 @@ export function SearchHome() {
 
         {songs.length > PAGE_SIZE ? (
           <div className="pager">
-            <button disabled={page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+            <button disabled={safePage === 1} onClick={() => setPage(Math.max(1, safePage - 1))}>
               Prev
             </button>
             <span>
-              {page} / {totalPages}
+              {safePage} / {totalPages}
             </span>
-            <button disabled={page === totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>
+            <button disabled={safePage === totalPages} onClick={() => setPage(Math.min(totalPages, safePage + 1))}>
               Next
             </button>
           </div>
