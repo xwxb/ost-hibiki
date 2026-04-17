@@ -40,6 +40,8 @@ export function SearchHome() {
 
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const requestSeqRef = useRef(0);
+  const lastRequestedQueryRef = useRef<string | null>(null);
 
   //=== 派生数据：直接由 remote + local + query 推导，不额外存 state
   const songs = useMemo(() => {
@@ -63,23 +65,42 @@ export function SearchHome() {
   //=== 初始化 & 清理
   useEffect(() => {
     setLocalSongs(getLocalSongs());
-    void loadRemote("");
+    setIsPending(true);
+    triggerRemoteLoad("");
     return () => {
       clearTimeout(debounceRef.current);
       abortRef.current?.abort();
     };
   }, []);
 
-  async function loadRemote(q: string, signal?: AbortSignal) {
+  async function loadRemote(q: string, signal: AbortSignal, requestSeq: number) {
     try {
       const response = await fetch(`/api/songs?q=${encodeURIComponent(q)}`, { cache: "no-store", signal });
       if (!response.ok) return;
       const data = (await response.json()) as SongsResponse;
+      if (signal.aborted || requestSeq !== requestSeqRef.current) return;
       setRemoteSongs(data.items);
-      setIsPending(false);
     } catch {
-      if (!signal?.aborted) setIsPending(false);
+      if (signal.aborted || requestSeq !== requestSeqRef.current) return;
+    } finally {
+      if (!signal.aborted && requestSeq === requestSeqRef.current) {
+        setIsPending(false);
+      }
     }
+  }
+
+  function triggerRemoteLoad(value: string) {
+    if (value === lastRequestedQueryRef.current) {
+      setIsPending(false);
+      return;
+    }
+    lastRequestedQueryRef.current = value;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const nextSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = nextSeq;
+    void loadRemote(value, controller.signal, nextSeq);
   }
 
   function handleSearch(value: string) {
@@ -88,10 +109,7 @@ export function SearchHome() {
     clearTimeout(debounceRef.current);
     setIsPending(true);
     debounceRef.current = setTimeout(() => {
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-      void loadRemote(value, controller.signal);
+      triggerRemoteLoad(value);
     }, DEBOUNCE_MS);
   }
 
@@ -153,9 +171,15 @@ export function SearchHome() {
         </div>
 
         <div className="song-grid">
-          {pagedSongs.map((song) => (
+          {pagedSongs.map((song, index) => (
             <Link key={String(song.id)} href={`/song/${song.id}`} className="song-card">
-              <img src={song.img_urls[0]} alt={song.song_title} decoding="async" />
+              <img
+                src={song.img_urls[0]}
+                alt={song.song_title}
+                decoding="async"
+                loading={index < 3 ? "eager" : "lazy"}
+                fetchPriority={index < 3 ? "high" : "low"}
+              />
               <div className="song-card-body">
                 <div className="song-card-topline">
                   <span>{sourceCount(song)} sources</span>

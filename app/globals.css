@@ -1,5 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Kanit:wght@400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap");
-
 :root {
   color-scheme: dark;
   --bg: #090b10;
@@ -20,7 +18,7 @@ body {
     radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.06), transparent 28%),
     var(--bg);
   color: rgba(255, 255, 255, 0.9);
-  font-family: "Noto Sans JP", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
@@ -255,7 +253,7 @@ body {
 }
 
 .info-col h1 {
-  font-family: "Kanit", sans-serif;
+  font-family: var(--font-heading), sans-serif;
   font-size: 2.42rem;
   line-height: 1.02;
   margin: 0;
@@ -589,7 +587,7 @@ body {
 }
 
 .imm-title {
-  font-family: "Kanit", sans-serif;
+  font-family: var(--font-heading), sans-serif;
   font-size: 1.1rem;
   font-weight: 600;
 }
@@ -710,7 +708,7 @@ body {
 
 .search-header h1 {
   margin: 10px 0 10px;
-  font-family: "Kanit", sans-serif;
+  font-family: var(--font-heading), sans-serif;
   font-size: clamp(2.4rem, 4.8vw, 4rem);
   line-height: 0.98;
   letter-spacing: 0.08em;
@@ -876,7 +874,7 @@ body {
 .empty-tip strong {
   display: block;
   font-size: 18px;
-  font-family: "Kanit", sans-serif;
+  font-family: var(--font-heading), sans-serif;
   letter-spacing: 0.03em;
 }
 
@@ -1042,6 +1040,18 @@ body {
   .debug-popover {
     bottom: calc(100% + 10px);
     max-height: min(300px, 52vh);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .global-ambient,
+  .global-ambient-float,
+  .frame-layer-animated .img-bg,
+  .frame-layer-animated .img-fg,
+  .is-playing .eq-bar,
+  .img-fg.zooming {
+    animation: none !important;
+    transition: none !important;
   }
 }
 

@@ -16,26 +16,51 @@ interface QueueItem {
 }
 
 const PRIORITY_WEIGHT: Record<ImagePriority, number> = { high: 0, medium: 1, low: 2 };
-const MAX_CONCURRENT = 3;
+const IDLE_TIMEOUT_MS = 1200;
+
+type NetworkConnection = {
+  saveData?: boolean;
+  effectiveType?: string;
+};
+
+type NavigatorWithConnection = Navigator & {
+  connection?: NetworkConnection;
+};
+
+type WindowWithIdle = Window & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+  cancelIdleCallback?: (id: number) => void;
+};
+
+function resolveMaxConcurrent() {
+  if (typeof navigator === "undefined") return 3;
+  const connection = (navigator as NavigatorWithConnection).connection;
+  if (connection?.saveData) return 1;
+  if (connection?.effectiveType === "slow-2g" || connection?.effectiveType === "2g") return 1;
+  if (connection?.effectiveType === "3g") return 2;
+  return 3;
+}
 
 class ImagePreloader {
-  private queue: QueueItem[] = [];
+  private queue: Record<ImagePriority, string[]> = { high: [], medium: [], low: [] };
+  private queuedPriority = new Map<string, ImagePriority>();
   private active = 0;
+  private maxConcurrent = resolveMaxConcurrent();
   private loaded = new Set<string>();
   private inflight = new Set<string>();
+  private idleFlushToken: number | null = null;
 
   preload(url: string, priority: ImagePriority = "medium") {
     if (!url || this.loaded.has(url) || this.inflight.has(url)) return;
 
-    const existing = this.queue.find(item => item.url === url);
-    if (existing) {
-      if (PRIORITY_WEIGHT[priority] < PRIORITY_WEIGHT[existing.priority]) {
-        existing.priority = priority;
-      }
+    const existingPriority = this.queuedPriority.get(url);
+    if (existingPriority) {
+      this.promote(url, existingPriority, priority);
       return;
     }
 
-    this.queue.push({ url, priority });
+    this.queue[priority].push(url);
+    this.queuedPriority.set(url, priority);
     this.flush();
   }
 
@@ -43,11 +68,61 @@ class ImagePreloader {
     return this.loaded.has(url);
   }
 
-  private flush() {
-    while (this.active < MAX_CONCURRENT && this.queue.length > 0) {
-      this.queue.sort((a, b) => PRIORITY_WEIGHT[a.priority] - PRIORITY_WEIGHT[b.priority]);
-      const item = this.queue.shift()!;
+  private promote(url: string, from: ImagePriority, to: ImagePriority) {
+    if (PRIORITY_WEIGHT[to] >= PRIORITY_WEIGHT[from]) return;
+    const fromQueue = this.queue[from];
+    const index = fromQueue.indexOf(url);
+    if (index === -1) return;
+    fromQueue.splice(index, 1);
+    this.queue[to].push(url);
+    this.queuedPriority.set(url, to);
+  }
 
+  private hasUrgentQueue() {
+    return this.queue.high.length > 0 || this.queue.medium.length > 0;
+  }
+
+  private popNext(allowLow: boolean): QueueItem | null {
+    const high = this.queue.high.shift();
+    if (high) {
+      this.queuedPriority.delete(high);
+      return { url: high, priority: "high" };
+    }
+    const medium = this.queue.medium.shift();
+    if (medium) {
+      this.queuedPriority.delete(medium);
+      return { url: medium, priority: "medium" };
+    }
+    if (!allowLow) return null;
+    const low = this.queue.low.shift();
+    if (!low) return null;
+    this.queuedPriority.delete(low);
+    return { url: low, priority: "low" };
+  }
+
+  private scheduleIdleFlush() {
+    if (this.idleFlushToken !== null || this.queue.low.length === 0) return;
+    const win = window as WindowWithIdle;
+    if (typeof win.requestIdleCallback === "function") {
+      this.idleFlushToken = win.requestIdleCallback(
+        () => {
+          this.idleFlushToken = null;
+          this.flush(true);
+        },
+        { timeout: IDLE_TIMEOUT_MS }
+      );
+      return;
+    }
+    this.idleFlushToken = window.setTimeout(() => {
+      this.idleFlushToken = null;
+      this.flush(true);
+    }, 300);
+  }
+
+  private flush(allowLow = false) {
+    while (this.active < this.maxConcurrent) {
+      const item = this.popNext(allowLow);
+      if (!item) break;
       if (this.loaded.has(item.url) || this.inflight.has(item.url)) continue;
 
       this.active++;
@@ -63,6 +138,10 @@ class ImagePreloader {
       img.onload = done;
       img.onerror = done;
       img.src = item.url;
+    }
+
+    if (!allowLow && this.active < this.maxConcurrent && !this.hasUrgentQueue() && this.queue.low.length > 0) {
+      this.scheduleIdleFlush();
     }
   }
 }
