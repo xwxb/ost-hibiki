@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { OstSongItem } from "@/lib/schema";
 import { buildEmbedUrl } from "@/lib/media";
+import { handleImgError } from "@/lib/image-fallback";
 
 type SourceType = "youtube" | "bilibili" | "netease";
 type ModeType = "preview" | "immersive";
@@ -227,13 +228,13 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
           <div className="art-canvas" onClick={onCanvasClick} onMouseMove={onCanvasMouseMove} onMouseLeave={onCanvasMouseLeave}>
             {prevImage && prevImage !== activeImage && (
               <div className="frame-layer active">
-                <img className="img-bg" src={prevImage} alt="bg" />
-                <img className="img-fg" src={prevImage} alt="" />
+                <img className="img-bg" src={prevImage} alt="bg" onError={handleImgError} />
+                <img className="img-fg" src={prevImage} alt="" onError={handleImgError} />
               </div>
             )}
             <div key={frameMotionKey} className="frame-layer active frame-layer-animated">
-              <img className="img-bg" src={activeImage} alt="bg" />
-              <img className={`img-fg ${mode === "immersive" && playing ? "zooming" : ""}`} src={activeImage} alt={song.song_title} />
+              <img className="img-bg" src={activeImage} alt="bg" onError={handleImgError} />
+              <img className={`img-fg ${mode === "immersive" && playing ? "zooming" : ""}`} src={activeImage} alt={song.song_title} onError={handleImgError} />
             </div>
             <div className="hover-expand-overlay">
               <div className="glass-play-btn">

@@ -28,6 +28,11 @@ interface OstSongItem {
   // 核心图片（封面/背景）
   img_urls: string[];
 
+  // 审核状态：approved / pending / rejected
+  // - 老文档无此字段时一律按 approved 处理（schema 默认）
+  // - 用户经 POST /api/songs 投稿写入时，服务端强制 status="pending"
+  status: "pending" | "approved" | "rejected";
+
   // 灵活扩展字段
   extras?: Record<string, string | number | boolean | string[]>;
 }
@@ -47,6 +52,17 @@ interface CounterDoc {
 
 3. 历史文档若缺失 `id`，可在读取时按计数器补齐并回写。
 4. 本地临时曲目仍可使用字符串 id（如 `temp-*`）以避免与正式数据冲突。
+5. **正式上线 song id 起点为 100000**。上线前手动执行：
+
+```js
+db.counters.updateOne(
+  { _id: "songs" },
+  { $max: { seq: 99999 } },
+  { upsert: true }
+);
+```
+
+之后 `getNextSongId` 第一次自增即返回 100000。代码不主动写入此值，避免本地 / 测试环境被意外抬高。
 
 ## 最小校验
 
@@ -59,9 +75,18 @@ interface CounterDoc {
 
 1. 按 `song_title` / `subtitle` / `tags` 关键词搜索。
 2. 按 `tags` 过滤，后续实现。
+3. 默认仅返回 `status === "approved"` 或不存在 `status` 字段的文档。
+
+## 云端投稿（MVP 简版）
+
+1. 提交入口：`POST /api/songs`，body 与 song 文档一致但不接受 `id` / `status`。
+2. 服务端强制 `status="pending"`，`id` 走 counter 自增。
+3. 接口含 IP 限流：10 分钟最多 5 次（进程内，未来切 upstash）。
+4. 审批暂无后台界面，直接在 mongo 把 `status` 改 `approved` 即可对外可见。
 
 ## 暂时不做
 
 1. 不做专辑模型。
 2. 不做通用媒体源抽象。
 3. Bangumi 数据后续按需抓取，不做全量同步。
+4. 不做审批后台 UI / 鉴权（用 Mongo Compass 手动操作）。
