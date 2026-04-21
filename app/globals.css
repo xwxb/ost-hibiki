@@ -154,7 +154,9 @@ body {
 
 .img-fg {
   object-fit: cover;
-  transform: scale(1.02);
+  transform: scale(1.02) translate3d(0, 0, 0);
+  transition: transform 0.9s cubic-bezier(0.23, 1, 0.32, 1);
+  will-change: transform;
 }
 
 .frame-layer-animated .img-bg,
@@ -163,8 +165,7 @@ body {
 }
 
 .img-fg.zooming {
-  transition: transform 22s linear;
-  transform: scale(1.008);
+  animation: immersiveImageDrift 22s cubic-bezier(0.42, 0, 0.22, 1) infinite alternate;
 }
 
 .hover-expand-overlay {
@@ -1365,5 +1366,17 @@ body {
   100% {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@keyframes immersiveImageDrift {
+  0% {
+    transform: scale(1.02) translate3d(0, 0, 0);
+  }
+  45% {
+    transform: scale(1.04) translate3d(-1.1%, -0.7%, 0);
+  }
+  100% {
+    transform: scale(1.03) translate3d(0.9%, 1.1%, 0);
   }
 }
