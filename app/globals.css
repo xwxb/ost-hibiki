@@ -1049,6 +1049,18 @@ body {
   color: rgba(255, 255, 255, 0.7);
 }
 
+.bgm-autofill-row {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.bgm-autofill-row .io-feedback {
+  margin: 0;
+}
+
 .io-feedback.is-error {
   color: rgba(255, 130, 130, 0.95);
 }

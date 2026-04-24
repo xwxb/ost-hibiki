@@ -20,6 +20,15 @@ import { filterSongs, mergeSongs } from "@/lib/song-utils";
 import { ImageUrlListEditor } from "./image-url-list-editor";
 
 type SongsResponse = { items: OstSongItem[] };
+type BgmAutofillResponse = {
+  data: {
+    bangumi_id: number;
+    song_title: string;
+    subtitle?: string;
+    tags: string[];
+    composer?: string;
+  };
+};
 
 type SourceField = "ytb_url" | "bili_url" | "netease_url";
 
@@ -148,6 +157,8 @@ export function SearchHome() {
   const [showOptional, setShowOptional] = useState(false);
   const [sourceDraftKey, setSourceDraftKey] = useState<SourceField>("ytb_url");
   const [sourceDraftUrl, setSourceDraftUrl] = useState("");
+  const [bgmAutofillLoading, setBgmAutofillLoading] = useState(false);
+  const [bgmAutofillMessage, setBgmAutofillMessage] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -264,6 +275,8 @@ export function SearchHome() {
     setShowOptional(false);
     setSourceDraftKey("ytb_url");
     setSourceDraftUrl("");
+    setBgmAutofillLoading(false);
+    setBgmAutofillMessage("");
   }
 
   function openCreate() {
@@ -277,7 +290,49 @@ export function SearchHome() {
     setShowOptional(Boolean(song.subtitle || song.composer || song.bangumi_id || song.tags.length));
     setFieldErrors({});
     setFormError("");
+    setBgmAutofillMessage("");
     setShowTempForm(true);
+  }
+
+  async function autofillByBangumiId() {
+    const bangumiId = form.bangumi_id.trim();
+    if (!bangumiId) {
+      setBgmAutofillMessage("请先填写 bangumi_id。");
+      return;
+    }
+    if (!/^\d+$/.test(bangumiId)) {
+      setBgmAutofillMessage("bangumi_id 需要是正整数。");
+      return;
+    }
+
+    setBgmAutofillLoading(true);
+    setBgmAutofillMessage("Bangumi 信息拉取中...");
+    try {
+      const response = await fetch(`/api/bgm/subject/${bangumiId}`, { cache: "no-store" });
+      const data = (await response.json().catch(() => ({}))) as BgmAutofillResponse & { error?: string };
+      if (!response.ok) {
+        setBgmAutofillMessage(data.error || "自动填充失败，请稍后重试。");
+        return;
+      }
+
+      const payload = data.data;
+      setForm((current) => ({
+        ...current,
+        bangumi_id: String(payload.bangumi_id),
+        song_title: current.song_title.trim() ? current.song_title : payload.song_title,
+        subtitle: current.subtitle.trim() ? current.subtitle : (payload.subtitle ?? ""),
+        composer: current.composer.trim() ? current.composer : (payload.composer ?? ""),
+        tags: current.tags.trim() ? current.tags : payload.tags.join(",")
+      }));
+      if (payload.subtitle || payload.composer) {
+        setShowOptional(true);
+      }
+      setBgmAutofillMessage("已自动填充可用字段；你可以继续手动调整。");
+    } catch {
+      setBgmAutofillMessage("网络波动，暂时无法拉取 Bangumi 信息。");
+    } finally {
+      setBgmAutofillLoading(false);
+    }
   }
 
   function validateForm(): ReturnType<typeof buildSubmissionPayload> | null {
@@ -478,8 +533,15 @@ export function SearchHome() {
                 onChange={(e) => updateField("tags", e.target.value)}
                 placeholder="tags: a,b,c"
               />
+              <input value={form.bangumi_id} onChange={(e) => updateField("bangumi_id", e.target.value)} placeholder="bangumi_id" />
             </div>
             {fieldErrors.song_title ? <p className="field-error">song_title：{fieldErrors.song_title}</p> : null}
+            <div className="bgm-autofill-row">
+              <button type="button" className="btn-secondary" onClick={() => void autofillByBangumiId()} disabled={bgmAutofillLoading}>
+                {bgmAutofillLoading ? "同步中..." : "根据 bangumi_id 自动填充"}
+              </button>
+              {bgmAutofillMessage ? <p className="io-feedback">{bgmAutofillMessage}</p> : null}
+            </div>
 
             <div className="source-editor">
               <label className="field-label">media_urls *</label>
@@ -530,7 +592,6 @@ export function SearchHome() {
               <div className="form-grid form-grid-optional">
                 <input value={form.subtitle} onChange={(e) => updateField("subtitle", e.target.value)} placeholder="subtitle" />
                 <input value={form.composer} onChange={(e) => updateField("composer", e.target.value)} placeholder="composer" />
-                <input value={form.bangumi_id} onChange={(e) => updateField("bangumi_id", e.target.value)} placeholder="bangumi_id" />
               </div>
             ) : null}
 
