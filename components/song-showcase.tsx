@@ -17,7 +17,7 @@ type FullscreenElement = HTMLElement & {
 };
 
 const AUTO_MS = 6500;
-const MODE_SWITCH_MS = 520;
+const MODE_SWITCH_MS = 1000;
 
 function sourceName(source: SourceType) {
   if (source === "youtube") return "YouTube Engine";
