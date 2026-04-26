@@ -82,6 +82,15 @@ function toAdminDraft(song: OstSongItem): AdminDraft {
 const PAGE_SIZE = 9;
 const DEBOUNCE_MS = 300;
 const ADMIN_MODE_ENABLED = process.env.NEXT_PUBLIC_ADMIN_MODE_ENABLED === "1";
+const ADMIN_GLOBAL_KEY = "__global";
+
+function normalizeAdminMediaUrls(mediaUrls: Record<SourceField, string>): Record<SourceField, string> {
+  return {
+    ytb_url: mediaUrls.ytb_url.trim(),
+    bili_url: mediaUrls.bili_url.trim(),
+    netease_url: mediaUrls.netease_url.trim()
+  };
+}
 
 function sourceCount(song: OstSongItem) {
   return [song.media_urls.ytb_url, song.media_urls.bili_url, song.media_urls.netease_url].filter(Boolean).length;
@@ -207,6 +216,10 @@ export function SearchHome() {
   useEffect(() => {
     setPage(1);
   }, [deferredQuery, songs.length]);
+
+  const pendingSongMap = useMemo(() => {
+    return Object.fromEntries(adminPendingSongs.map((song) => [String(song.id), song]));
+  }, [adminPendingSongs]);
 
   const totalPages = Math.max(1, Math.ceil(songs.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);

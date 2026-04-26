@@ -18,6 +18,7 @@ type FullscreenElement = HTMLElement & {
 
 const AUTO_MS = 6500;
 const MODE_SWITCH_MS = 1000;
+const YTB_SYNC_RETRY_MS = 240;
 
 function sourceName(source: SourceType) {
   if (source === "youtube") return "YouTube Engine";
@@ -91,6 +92,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   const wakeRafRef = useRef(0);
   const idleTimerRef = useRef<number | null>(null);
   const modeSwitchTimerRef = useRef<number | null>(null);
+  const ytbSyncTimerRef = useRef<number | null>(null);
   const idleStateRef = useRef(false);
   const playerFrameRef = useRef<HTMLIFrameElement | null>(null);
 
@@ -225,6 +227,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
       if (wakeRafRef.current) cancelAnimationFrame(wakeRafRef.current);
       if (idleTimerRef.current !== null) window.clearTimeout(idleTimerRef.current);
       if (modeSwitchTimerRef.current !== null) window.clearTimeout(modeSwitchTimerRef.current);
+      if (ytbSyncTimerRef.current !== null) window.clearTimeout(ytbSyncTimerRef.current);
     };
   }, []);
 
@@ -277,9 +280,8 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     await enterTrueFullscreen();
   }
 
-  function sendYoutubeCommand(command: "playVideo" | "pauseVideo") {
-    const frame = playerFrameRef.current;
-    if (!frame?.contentWindow) return;
+  function postYoutubeCommand(frame: HTMLIFrameElement, command: "playVideo" | "pauseVideo") {
+    if (!frame.contentWindow) return;
     frame.contentWindow.postMessage(
       JSON.stringify({
         event: "command",
@@ -288,6 +290,17 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
       }),
       "https://www.youtube.com"
     );
+  }
+
+  function sendYoutubeCommand(command: "playVideo" | "pauseVideo") {
+    const frame = playerFrameRef.current;
+    if (!frame) return;
+    postYoutubeCommand(frame, command);
+    if (ytbSyncTimerRef.current !== null) window.clearTimeout(ytbSyncTimerRef.current);
+    ytbSyncTimerRef.current = window.setTimeout(() => {
+      if (playerFrameRef.current === frame) postYoutubeCommand(frame, command);
+      ytbSyncTimerRef.current = null;
+    }, YTB_SYNC_RETRY_MS);
   }
 
   function onCanvasClick() {
