@@ -17,4 +17,3 @@ export async function GET(request: NextRequest) {
   const items = await querySongsByStatus(parsed.data);
   return NextResponse.json({ items });
 }
-

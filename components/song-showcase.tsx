@@ -17,6 +17,7 @@ type FullscreenElement = HTMLElement & {
 };
 
 const AUTO_MS = 6500;
+const MODE_SWITCH_MS = 520;
 
 function sourceName(source: SourceType) {
   if (source === "youtube") return "YouTube Engine";
@@ -175,11 +176,18 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "f" && mode === "immersive") {
+      if ((e.key === "f" || e.key === "F") && mode === "immersive") {
         e.preventDefault();
         void toggleTrueFullscreen();
       }
-      if (e.key === "Escape" && mode === "immersive" && !isFullscreen) setModeWithTransition("preview");
+      if (e.key === "Escape" && mode === "immersive") {
+        if (isFullscreen) {
+          e.preventDefault();
+          void exitTrueFullscreen();
+          return;
+        }
+        setModeWithTransition("preview");
+      }
       if (e.code === "Space" && !["INPUT", "TEXTAREA"].includes((e.target as HTMLElement).tagName)) {
         e.preventDefault();
         togglePlay();
@@ -231,7 +239,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     modeSwitchTimerRef.current = window.setTimeout(() => {
       setModeSwitching(false);
       modeSwitchTimerRef.current = null;
-    }, 520);
+    }, MODE_SWITCH_MS);
   }
 
   function currentFullscreenElement(): Element | null {
@@ -333,7 +341,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   useEffect(() => {
     if (source !== "youtube") return;
     sendYoutubeCommand(playing ? "playVideo" : "pauseVideo");
-  }, [playing, source, sourceUrl]);
+  }, [playing, source]);
 
   useEffect(() => {
     const syncFullscreen = () => setIsFullscreen(Boolean(currentFullscreenElement()));

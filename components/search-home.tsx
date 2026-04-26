@@ -341,9 +341,9 @@ export function SearchHome() {
       setForm((current) => ({
         ...current,
         bangumi_id: String(payload.bangumi_id),
-        // title 由用户手填，Bangumi 标题只用于补到 subtitle。
+        // title 由用户手填；自动抓取仅补充 subtitle/composer/tags。
         song_title: current.song_title,
-        subtitle: current.subtitle.trim() ? current.subtitle : (payload.subtitle ?? payload.song_title),
+        subtitle: current.subtitle.trim() ? current.subtitle : (payload.subtitle ?? ""),
         composer: current.composer.trim() ? current.composer : (payload.composer ?? ""),
         tags: current.tags.trim() ? current.tags : payload.tags.join(",")
       }));

@@ -109,7 +109,7 @@ export function mapBangumiToAutofill(subject: BangumiSubject, persons: BangumiRe
     throw new Error("Bangumi 条目缺少可用标题");
   }
 
-  const subtitleCandidate = originalTitle || localizedTitle;
+  const subtitleCandidate = songTitle === localizedTitle ? originalTitle : localizedTitle;
   const safeSubtitle = subtitleCandidate && subtitleCandidate !== songTitle ? subtitleCandidate : undefined;
 
   return {

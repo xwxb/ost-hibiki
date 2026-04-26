@@ -73,7 +73,6 @@ body {
   height: auto;
   position: relative;
   transition: padding var(--trans-layout), gap var(--trans-layout);
-  will-change: padding, gap;
 }
 
 .mode-preview #app {
@@ -92,6 +91,7 @@ body {
 
 .song-root.mode-switching #app {
   transition-duration: 1s;
+  will-change: padding, gap;
 }
 
 .song-root.mode-switching .art-canvas,

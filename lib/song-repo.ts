@@ -46,6 +46,12 @@ function parseNumericId(value: unknown): number | null {
   return null;
 }
 
+/**
+ * 构建按歌曲 ID 查询的兼容条件：
+ * - 数字路由参数同时匹配 number/string，兼容历史库 id 混存；
+ * - 仍保留原始字符串匹配；
+ * - 若参数本身是合法 ObjectId，则附加 _id 匹配。
+ */
 function buildSongIdClauses(id: string): Filter<RawSongDoc>[] {
   const clauses: Filter<RawSongDoc>[] = [];
   const numericId = parseNumericId(id);
@@ -186,7 +192,9 @@ export async function updateSongReviewFields(
   if (!Object.keys(updateSet).length) return null;
 
   const result = await collection.findOneAndUpdate({ $or: buildSongIdClauses(id) }, { $set: updateSet }, { returnDocument: "after" });
-  if (!result) return null;
+  if (!result) {
+    return null;
+  }
   const normalized = await ensureMongoSongId(db, collection, result);
   return normalizeMongoDoc(normalized);
 }
