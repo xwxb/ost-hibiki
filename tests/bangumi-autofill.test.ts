@@ -14,8 +14,8 @@ describe("bangumi-autofill", () => {
 
     expect(mapBangumiToAutofill(subject, persons)).toEqual({
       bangumi_id: 622928,
-      song_title: "Way of leaving (feat.o.j.o)",
-      subtitle: "离去之路",
+      song_title: "离去之路",
+      subtitle: "Way of leaving (feat.o.j.o)",
       tags: ["OST", "Piano", "Emotional"],
       composer: "伊賀拓郎"
     });

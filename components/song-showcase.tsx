@@ -8,6 +8,13 @@ import { handleImgError } from "@/lib/image-fallback";
 
 type SourceType = "youtube" | "bilibili" | "netease";
 type ModeType = "preview" | "immersive";
+type FullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => Promise<void> | void;
+};
+type FullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
 
 const AUTO_MS = 6500;
 
@@ -65,6 +72,7 @@ function splitSongTitle(title: string) {
 export function SongShowcase({ song }: { song: OstSongItem }) {
   const [mode, setMode] = useState<ModeType>("preview");
   const [modeSwitching, setModeSwitching] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [frameIndex, setFrameIndex] = useState(0);
   const [extOpen, setExtOpen] = useState(false);
@@ -167,7 +175,11 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && mode === "immersive") setModeWithTransition("preview");
+      if (e.key.toLowerCase() === "f" && mode === "immersive") {
+        e.preventDefault();
+        void toggleTrueFullscreen();
+      }
+      if (e.key === "Escape" && mode === "immersive" && !isFullscreen) setModeWithTransition("preview");
       if (e.code === "Space" && !["INPUT", "TEXTAREA"].includes((e.target as HTMLElement).tagName)) {
         e.preventDefault();
         togglePlay();
@@ -181,7 +193,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [mode, song.img_urls.length]);
+  }, [isFullscreen, mode, song.img_urls.length]);
 
   useEffect(() => {
     if (source !== "bilibili" || !playing) return;
@@ -193,6 +205,11 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     idleStateRef.current = false;
     setIdle(false);
   }, [mode]);
+
+  useEffect(() => {
+    if (mode === "immersive" || !isFullscreen) return;
+    void exitTrueFullscreen();
+  }, [isFullscreen, mode]);
 
   useEffect(() => {
     return () => {
@@ -215,6 +232,41 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
       setModeSwitching(false);
       modeSwitchTimerRef.current = null;
     }, 520);
+  }
+
+  function currentFullscreenElement(): Element | null {
+    const doc = document as FullscreenDocument;
+    return document.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+  }
+
+  async function enterTrueFullscreen() {
+    const target = document.documentElement as FullscreenElement;
+    if (target.requestFullscreen) {
+      await target.requestFullscreen();
+      return;
+    }
+    if (target.webkitRequestFullscreen) {
+      await target.webkitRequestFullscreen();
+    }
+  }
+
+  async function exitTrueFullscreen() {
+    const doc = document as FullscreenDocument;
+    if (document.exitFullscreen) {
+      await document.exitFullscreen();
+      return;
+    }
+    if (doc.webkitExitFullscreen) {
+      await doc.webkitExitFullscreen();
+    }
+  }
+
+  async function toggleTrueFullscreen() {
+    if (currentFullscreenElement()) {
+      await exitTrueFullscreen();
+      return;
+    }
+    await enterTrueFullscreen();
   }
 
   function sendYoutubeCommand(command: "playVideo" | "pauseVideo") {
@@ -283,6 +335,17 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     sendYoutubeCommand(playing ? "playVideo" : "pauseVideo");
   }, [playing, source, sourceUrl]);
 
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(Boolean(currentFullscreenElement()));
+    syncFullscreen();
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    document.addEventListener("webkitfullscreenchange", syncFullscreen as EventListener);
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreen);
+      document.removeEventListener("webkitfullscreenchange", syncFullscreen as EventListener);
+    };
+  }, []);
+
   return (
     <div className={`song-root mode-${mode} ${modeSwitching ? "mode-switching" : ""} ${playing ? "is-playing" : ""} ${idle ? "is-idle" : ""} ${centerHover ? "center-hover" : ""}`}>
       <div className="global-ambient" style={{ backgroundImage: `url(${activeImage})` }} />
@@ -299,7 +362,15 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
           <div className="imm-title">{song.song_title}</div>
           <div className="imm-sub">{song.subtitle ?? ""}</div>
         </div>
-        <div style={{ width: 44 }} />
+        <button className="icon-btn" onClick={() => void toggleTrueFullscreen()} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
+            {isFullscreen ? (
+              <path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5" />
+            ) : (
+              <path d="M3 9V3h6M15 3h6v6M3 15v6h6M21 15v6h-6" />
+            )}
+          </svg>
+        </button>
       </header>
 
       <div id="app">
@@ -375,6 +446,16 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
                 <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
               </svg>
               Immersive
+            </button>
+            <button className="btn-secondary" onClick={() => void toggleTrueFullscreen()}>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                {isFullscreen ? (
+                  <path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5" />
+                ) : (
+                  <path d="M3 9V3h6M15 3h6v6M3 15v6h6M21 15v6h-6" />
+                )}
+              </svg>
+              {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             </button>
           </div>
 
