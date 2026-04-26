@@ -31,7 +31,7 @@ const SUBMIT_MAX = 5;
 
 /**
  * 用户云端投稿入口。
- * - 服务端强制 status=pending
+ * - REVIEW_ENABLED=true 时写入 pending；否则自动 approved
  * - 简单 IP 限流 30 分钟 5 次（见 lib/rate-limit.ts）
  * - DB 不可用时返回 503，避免静默丢弃
  */

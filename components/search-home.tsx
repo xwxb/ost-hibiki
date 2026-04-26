@@ -20,6 +20,7 @@ import { filterSongs, mergeSongs } from "@/lib/song-utils";
 import { ImageUrlListEditor } from "./image-url-list-editor";
 
 type SongsResponse = { items: OstSongItem[] };
+type AdminSongsResponse = { items: OstSongItem[] };
 type BgmAutofillResponse = {
   data: {
     bangumi_id: number;
@@ -62,8 +63,25 @@ const EMPTY_FORM: FormState = {
   }
 };
 
+type AdminDraft = {
+  media_urls: Record<SourceField, string>;
+  img_urls: string[];
+};
+
+function toAdminDraft(song: OstSongItem): AdminDraft {
+  return {
+    media_urls: {
+      ytb_url: song.media_urls.ytb_url ?? "",
+      bili_url: song.media_urls.bili_url ?? "",
+      netease_url: song.media_urls.netease_url ?? ""
+    },
+    img_urls: [...song.img_urls]
+  };
+}
+
 const PAGE_SIZE = 9;
 const DEBOUNCE_MS = 300;
+const ADMIN_MODE_ENABLED = process.env.NEXT_PUBLIC_ADMIN_MODE_ENABLED === "1";
 
 function sourceCount(song: OstSongItem) {
   return [song.media_urls.ytb_url, song.media_urls.bili_url, song.media_urls.netease_url].filter(Boolean).length;
@@ -159,6 +177,10 @@ export function SearchHome() {
   const [sourceDraftUrl, setSourceDraftUrl] = useState("");
   const [bgmAutofillLoading, setBgmAutofillLoading] = useState(false);
   const [bgmAutofillMessage, setBgmAutofillMessage] = useState("");
+  const [adminPendingSongs, setAdminPendingSongs] = useState<OstSongItem[]>([]);
+  const [adminDraftMap, setAdminDraftMap] = useState<Record<string, AdminDraft>>({});
+  const [adminBusyId, setAdminBusyId] = useState<string | null>(null);
+  const [adminFeedback, setAdminFeedback] = useState<Record<string, string>>({});
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -319,8 +341,9 @@ export function SearchHome() {
       setForm((current) => ({
         ...current,
         bangumi_id: String(payload.bangumi_id),
-        song_title: current.song_title.trim() ? current.song_title : payload.song_title,
-        subtitle: current.subtitle.trim() ? current.subtitle : (payload.subtitle ?? ""),
+        // title 由用户手填，Bangumi 标题只用于补到 subtitle。
+        song_title: current.song_title,
+        subtitle: current.subtitle.trim() ? current.subtitle : (payload.subtitle ?? payload.song_title),
         composer: current.composer.trim() ? current.composer : (payload.composer ?? ""),
         tags: current.tags.trim() ? current.tags : payload.tags.join(",")
       }));

@@ -30,6 +30,7 @@ export function buildEmbedUrl(source: SourceType, rawUrl: string, autoplay = fal
       rel: "0",
       controls: "1",
       playsinline: "1",
+      enablejsapi: "1",
       autoplay: autoplay ? "1" : "0"
     });
     return `https://www.youtube.com/embed/${id}?${params.toString()}`;

@@ -73,6 +73,7 @@ body {
   height: auto;
   position: relative;
   transition: padding var(--trans-layout), gap var(--trans-layout);
+  will-change: padding, gap;
 }
 
 .mode-preview #app {
@@ -85,9 +86,18 @@ body {
 .mode-immersive #app {
   padding: 0 32px;
   gap: 0;
-  height: 100vh;
   align-items: center;
   justify-content: center;
+}
+
+.song-root.mode-switching #app {
+  transition-duration: 1s;
+}
+
+.song-root.mode-switching .art-canvas,
+.song-root.mode-switching .info-col,
+.song-root.mode-switching .imm-ui {
+  transition-duration: 0.85s;
 }
 
 .art-col {

@@ -76,3 +76,26 @@ export const songSubmissionSchema = z
   });
 
 export type SongSubmissionInput = z.infer<typeof songSubmissionSchema>;
+
+export const adminSongUpdateSchema = z
+  .object({
+    status: songStatusSchema.optional(),
+    media_urls: mediaUrlsSchema.optional(),
+    img_urls: z.array(z.string().trim().url()).min(1).optional()
+  })
+  .refine((value) => value.status !== undefined || value.media_urls !== undefined || value.img_urls !== undefined, {
+    message: "至少提交一个可更新字段"
+  })
+  .superRefine((value, ctx) => {
+    if (!value.media_urls) return;
+    const hasMedia = Boolean(value.media_urls.ytb_url || value.media_urls.bili_url || value.media_urls.netease_url);
+    if (!hasMedia) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["media_urls"],
+        message: "至少需要一个媒体链接"
+      });
+    }
+  });
+
+export type AdminSongUpdateInput = z.infer<typeof adminSongUpdateSchema>;
