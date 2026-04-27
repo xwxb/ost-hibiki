@@ -15,11 +15,13 @@ import {
 } from "@/lib/local-storage";
 import { usePreloadImages } from "@/lib/image-preloader";
 import { handleImgError } from "@/lib/image-fallback";
+import { isPublicAdminModeEnabled } from "@/lib/runtime-config";
 import { parseSong, songSubmissionSchema, type OstSongItem } from "@/lib/schema";
 import { filterSongs, mergeSongs } from "@/lib/song-utils";
 import { ImageUrlListEditor } from "./image-url-list-editor";
 
 type SongsResponse = { items: OstSongItem[] };
+type AdminSongsResponse = { items: OstSongItem[] };
 type BgmAutofillResponse = {
   data: {
     bangumi_id: number;
@@ -62,8 +64,34 @@ const EMPTY_FORM: FormState = {
   }
 };
 
+type AdminDraft = {
+  media_urls: Record<SourceField, string>;
+  img_urls: string[];
+};
+
+function toAdminDraft(song: OstSongItem): AdminDraft {
+  return {
+    media_urls: {
+      ytb_url: song.media_urls.ytb_url ?? "",
+      bili_url: song.media_urls.bili_url ?? "",
+      netease_url: song.media_urls.netease_url ?? ""
+    },
+    img_urls: [...song.img_urls]
+  };
+}
+
 const PAGE_SIZE = 9;
 const DEBOUNCE_MS = 300;
+const ADMIN_MODE_ENABLED = isPublicAdminModeEnabled();
+const ADMIN_GLOBAL_KEY = "__global";
+
+function normalizeAdminMediaUrls(mediaUrls: Record<SourceField, string>): Record<SourceField, string> {
+  return {
+    ytb_url: mediaUrls.ytb_url.trim(),
+    bili_url: mediaUrls.bili_url.trim(),
+    netease_url: mediaUrls.netease_url.trim()
+  };
+}
 
 function sourceCount(song: OstSongItem) {
   return [song.media_urls.ytb_url, song.media_urls.bili_url, song.media_urls.netease_url].filter(Boolean).length;
@@ -159,6 +187,10 @@ export function SearchHome() {
   const [sourceDraftUrl, setSourceDraftUrl] = useState("");
   const [bgmAutofillLoading, setBgmAutofillLoading] = useState(false);
   const [bgmAutofillMessage, setBgmAutofillMessage] = useState("");
+  const [adminPendingSongs, setAdminPendingSongs] = useState<OstSongItem[]>([]);
+  const [adminDraftMap, setAdminDraftMap] = useState<Record<string, AdminDraft>>({});
+  const [adminBusyId, setAdminBusyId] = useState<string | null>(null);
+  const [adminFeedback, setAdminFeedback] = useState<Record<string, string>>({});
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -177,6 +209,11 @@ export function SearchHome() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!ADMIN_MODE_ENABLED) return;
+    void loadAdminPendingSongs();
+  }, []);
+
   const songs = useMemo(() => {
     const merged = mergeSongs(remoteSongs, localSongs);
     return filterSongs(merged, { q: deferredQuery });
@@ -185,6 +222,10 @@ export function SearchHome() {
   useEffect(() => {
     setPage(1);
   }, [deferredQuery, songs.length]);
+
+  const pendingSongMap = useMemo(() => {
+    return Object.fromEntries(adminPendingSongs.map((song) => [String(song.id), song]));
+  }, [adminPendingSongs]);
 
   const totalPages = Math.max(1, Math.ceil(songs.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -320,7 +361,7 @@ export function SearchHome() {
         ...current,
         bangumi_id: String(payload.bangumi_id),
         song_title: current.song_title.trim() ? current.song_title : payload.song_title,
-        subtitle: current.subtitle.trim() ? current.subtitle : (payload.subtitle ?? ""),
+        subtitle: current.subtitle.trim() ? current.subtitle : (payload.subtitle ?? payload.song_title ?? ""),
         composer: current.composer.trim() ? current.composer : (payload.composer ?? ""),
         tags: current.tags.trim() ? current.tags : payload.tags.join(",")
       }));
@@ -394,12 +435,16 @@ export function SearchHome() {
         return;
       }
 
-      const data = (await response.json().catch(() => ({}))) as { deduped?: boolean };
+      const data = (await response.json().catch(() => ({}))) as { deduped?: boolean; status?: "pending" | "approved" | "rejected" };
       const next = markLocalSongSubmitted(song.id);
       setSubmittedLocalIds(new Set(next));
       setPublishFeedback((prev) => ({
         ...prev,
-        [key]: data?.deduped ? "云端已有同条目，已自动去重。" : "已提交云端审核。"
+        [key]: data?.deduped
+          ? "云端已有同条目，已自动去重。"
+          : data?.status === "approved"
+            ? "已提交并自动通过。"
+            : "已提交云端审核。"
       }));
     } catch {
       setPublishFeedback((prev) => ({ ...prev, [key]: "网络异常，请稍后重试。" }));
@@ -442,6 +487,97 @@ export function SearchHome() {
       setImportFeedback({ ...result, isError: result.errors.length > 0 && result.added === 0 });
     } catch (err) {
       setImportFeedback({ added: 0, skipped: 0, errors: [(err as Error).message], isError: true });
+    }
+  }
+
+  async function loadAdminPendingSongs() {
+    if (!ADMIN_MODE_ENABLED) return;
+    setAdminFeedback((prev) => ({ ...prev, [ADMIN_GLOBAL_KEY]: "审核列表加载中..." }));
+    try {
+      const response = await fetch("/api/admin/songs?status=pending", { cache: "no-store" });
+      if (!response.ok) {
+        setAdminPendingSongs([]);
+        setAdminDraftMap({});
+        setAdminFeedback((prev) => ({ ...prev, [ADMIN_GLOBAL_KEY]: "管理员模式未启用或无权限访问。" }));
+        return;
+      }
+      const data = (await response.json()) as AdminSongsResponse;
+      const items = data.items ?? [];
+      const draftEntries = items.map((song) => [String(song.id), toAdminDraft(song)] as const);
+      setAdminPendingSongs(items);
+      setAdminDraftMap(Object.fromEntries(draftEntries));
+      setAdminFeedback((prev) => ({ ...prev, [ADMIN_GLOBAL_KEY]: items.length ? `待审核 ${items.length} 条` : "当前没有待审核条目" }));
+    } catch {
+      setAdminFeedback((prev) => ({ ...prev, [ADMIN_GLOBAL_KEY]: "审核列表加载失败，请稍后重试。" }));
+    }
+  }
+
+  function updateAdminMedia(songId: string, key: SourceField, value: string) {
+    setAdminDraftMap((prev) => {
+      const song = pendingSongMap[songId];
+      if (!song) return prev;
+      const base = prev[songId] ?? toAdminDraft(song);
+      return {
+        ...prev,
+        [songId]: {
+          ...base,
+          media_urls: {
+            ...base.media_urls,
+            [key]: value
+          }
+        }
+      };
+    });
+  }
+
+  function updateAdminImages(songId: string, next: string[]) {
+    setAdminDraftMap((prev) => {
+      const song = pendingSongMap[songId];
+      if (!song) return prev;
+      const base = prev[songId] ?? toAdminDraft(song);
+      return {
+        ...prev,
+        [songId]: {
+          ...base,
+          img_urls: next
+        }
+      };
+    });
+  }
+
+  async function saveAdminSong(songId: string, status?: "approved" | "rejected") {
+    const currentSong = pendingSongMap[songId];
+    if (!currentSong || adminBusyId) return;
+    const draft = adminDraftMap[songId] ?? toAdminDraft(currentSong);
+    const payload: {
+      status?: "approved" | "rejected";
+      media_urls: Record<SourceField, string>;
+      img_urls: string[];
+    } = {
+      media_urls: normalizeAdminMediaUrls(draft.media_urls),
+      img_urls: draft.img_urls.map((url) => url.trim()).filter(Boolean)
+    };
+    if (status) payload.status = status;
+
+    setAdminBusyId(songId);
+    setAdminFeedback((prev) => ({ ...prev, [songId]: "提交中..." }));
+    try {
+      const response = await fetch(`/api/admin/songs/${encodeURIComponent(songId)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        setAdminFeedback((prev) => ({ ...prev, [songId]: data.error ?? "提交失败，请稍后重试。" }));
+        return;
+      }
+      setAdminFeedback((prev) => ({ ...prev, [songId]: status === "approved" ? "已通过审核" : status === "rejected" ? "已驳回" : "已保存草稿字段" }));
+      await loadAdminPendingSongs();
+    } catch {
+      setAdminFeedback((prev) => ({ ...prev, [songId]: "网络异常，提交失败。" }));
+    } finally {
+      setAdminBusyId(null);
     }
   }
 
@@ -680,6 +816,62 @@ export function SearchHome() {
               Next
             </button>
           </div>
+        ) : null}
+
+        {ADMIN_MODE_ENABLED ? (
+          <section className="admin-panel">
+            <div className="admin-panel-head">
+              <h3>审核模式（Pending）</h3>
+              <div className="admin-panel-actions">
+                <button type="button" className="btn-ghost" onClick={() => void loadAdminPendingSongs()} disabled={Boolean(adminBusyId)}>
+                  刷新
+                </button>
+                <span>{adminFeedback[ADMIN_GLOBAL_KEY] ?? ""}</span>
+              </div>
+            </div>
+            <div className="admin-list">
+              {adminPendingSongs.map((song) => {
+                const key = String(song.id);
+                const draft = adminDraftMap[key] ?? toAdminDraft(song);
+                const busy = adminBusyId === key;
+                return (
+                  <article key={key} className="admin-item">
+                    <header>
+                      <h4>{song.song_title}</h4>
+                      <p>{song.subtitle ?? " "}</p>
+                    </header>
+                    <div className="admin-source-grid">
+                      {SOURCE_OPTIONS.map((source) => (
+                        <label key={source.key}>
+                          <span>{labelBySource(source.key)}</span>
+                          <input
+                            value={draft.media_urls[source.key]}
+                            onChange={(e) => updateAdminMedia(key, source.key, e.target.value)}
+                            placeholder="https://..."
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <label className="field-label">img_urls *</label>
+                    <ImageUrlListEditor urls={draft.img_urls} onChange={(next) => updateAdminImages(key, next)} />
+                    <div className="admin-item-actions">
+                      <button type="button" className="btn-secondary" disabled={busy} onClick={() => void saveAdminSong(key)}>
+                        保存字段
+                      </button>
+                      <button type="button" className="btn-secondary" disabled={busy} onClick={() => void saveAdminSong(key, "approved")}>
+                        通过
+                      </button>
+                      <button type="button" className="btn-ghost" disabled={busy} onClick={() => void saveAdminSong(key, "rejected")}>
+                        驳回
+                      </button>
+                    </div>
+                    {adminFeedback[key] ? <p className="publish-feedback">{adminFeedback[key]}</p> : null}
+                  </article>
+                );
+              })}
+              {adminPendingSongs.length === 0 ? <p className="empty-tip">当前没有待审核条目。</p> : null}
+            </div>
+          </section>
         ) : null}
       </section>
     </main>

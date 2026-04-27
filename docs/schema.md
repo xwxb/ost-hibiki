@@ -78,6 +78,6 @@ db.counters.updateOne(
 ## 云端投稿（MVP 简版）
 
 1. 提交入口：`POST /api/songs`，body 与 song 文档一致但不接受 `id` / `status`。
-2. 服务端强制 `status="pending"`，`id` 走 counter 自增。
+2. `REVIEW_ENABLED` 构建参数开启时写入 `status="pending"`；未开启时默认 `status="approved"`（自动通过），`id` 走 counter 自增。
 3. 接口含 IP 限流：10 分钟最多 5 次（进程内，未来切 upstash）。
-4. 审批暂无后台界面，直接在 mongo 把 `status` 改 `approved` 即可对外可见。
+4. `ADMIN_MODE_ENABLED` + `NEXT_PUBLIC_ADMIN_MODE_ENABLED` 开启时，首页会出现待审核列表，可执行通过/驳回并编辑 `media_urls`、`img_urls`。

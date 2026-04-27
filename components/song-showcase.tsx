@@ -8,8 +8,17 @@ import { handleImgError } from "@/lib/image-fallback";
 
 type SourceType = "youtube" | "bilibili" | "netease";
 type ModeType = "preview" | "immersive";
+type FullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => Promise<void> | void;
+};
+type FullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
 
 const AUTO_MS = 6500;
+const MODE_SWITCH_MS = 1000;
+const YTB_SYNC_RETRY_MS = 240;
 
 function sourceName(source: SourceType) {
   if (source === "youtube") return "YouTube Engine";
@@ -64,6 +73,8 @@ function splitSongTitle(title: string) {
 
 export function SongShowcase({ song }: { song: OstSongItem }) {
   const [mode, setMode] = useState<ModeType>("preview");
+  const [modeSwitching, setModeSwitching] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [frameIndex, setFrameIndex] = useState(0);
   const [extOpen, setExtOpen] = useState(false);
@@ -80,7 +91,11 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   const rafRef = useRef(0);
   const wakeRafRef = useRef(0);
   const idleTimerRef = useRef<number | null>(null);
+  const modeSwitchTimerRef = useRef<number | null>(null);
+  const ytbSyncTimerRef = useRef<number | null>(null);
   const idleStateRef = useRef(false);
+  const playingRef = useRef(playing);
+  const playerFrameRef = useRef<HTMLIFrameElement | null>(null);
 
   useCarouselPreload(song.img_urls, frameIndex);
 
@@ -94,6 +109,10 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   useEffect(() => {
     idleStateRef.current = idle;
   }, [idle]);
+
+  useEffect(() => {
+    playingRef.current = playing;
+  }, [playing]);
   const frameMotionKey = `${frameIndex}-${activeImage}`;
   const titleParts = splitSongTitle(song.song_title);
   const sourceUrl =
@@ -105,7 +124,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
 
   const embedUrl = useMemo(() => {
     if (!sourceUrl) return null;
-    return buildEmbedUrl(source, sourceUrl, source === "youtube");
+    return buildEmbedUrl(source, sourceUrl);
   }, [source, sourceUrl]);
 
   useEffect(() => {
@@ -164,7 +183,18 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && mode === "immersive") setMode("preview");
+      if ((e.key === "f" || e.key === "F") && mode === "immersive") {
+        e.preventDefault();
+        void toggleTrueFullscreen();
+      }
+      if (e.key === "Escape" && mode === "immersive") {
+        if (isFullscreen) {
+          e.preventDefault();
+          void exitTrueFullscreen();
+          return;
+        }
+        setModeWithTransition("preview");
+      }
       if (e.code === "Space" && !["INPUT", "TEXTAREA"].includes((e.target as HTMLElement).tagName)) {
         e.preventDefault();
         togglePlay();
@@ -178,7 +208,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [mode, song.img_urls.length]);
+  }, [isFullscreen, mode, song.img_urls.length]);
 
   useEffect(() => {
     if (source !== "bilibili" || !playing) return;
@@ -192,10 +222,17 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   }, [mode]);
 
   useEffect(() => {
+    if (mode === "immersive" || !isFullscreen) return;
+    void exitTrueFullscreen();
+  }, [isFullscreen, mode]);
+
+  useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (wakeRafRef.current) cancelAnimationFrame(wakeRafRef.current);
       if (idleTimerRef.current !== null) window.clearTimeout(idleTimerRef.current);
+      if (modeSwitchTimerRef.current !== null) window.clearTimeout(modeSwitchTimerRef.current);
+      if (ytbSyncTimerRef.current !== null) window.clearTimeout(ytbSyncTimerRef.current);
     };
   }, []);
 
@@ -203,9 +240,80 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     setPlaying(prev => force || !prev);
   }
 
+  function setModeWithTransition(nextMode: ModeType) {
+    setModeSwitching(true);
+    if (modeSwitchTimerRef.current !== null) window.clearTimeout(modeSwitchTimerRef.current);
+    setMode(nextMode);
+    modeSwitchTimerRef.current = window.setTimeout(() => {
+      setModeSwitching(false);
+      modeSwitchTimerRef.current = null;
+    }, MODE_SWITCH_MS);
+  }
+
+  function currentFullscreenElement(): Element | null {
+    const doc = document as FullscreenDocument;
+    return document.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+  }
+
+  async function enterTrueFullscreen() {
+    const target = document.documentElement as FullscreenElement;
+    if (target.requestFullscreen) {
+      await target.requestFullscreen();
+      return;
+    }
+    if (target.webkitRequestFullscreen) {
+      await target.webkitRequestFullscreen();
+    }
+  }
+
+  async function exitTrueFullscreen() {
+    const doc = document as FullscreenDocument;
+    if (document.exitFullscreen) {
+      await document.exitFullscreen();
+      return;
+    }
+    if (doc.webkitExitFullscreen) {
+      await doc.webkitExitFullscreen();
+    }
+  }
+
+  async function toggleTrueFullscreen() {
+    if (currentFullscreenElement()) {
+      await exitTrueFullscreen();
+      return;
+    }
+    await enterTrueFullscreen();
+  }
+
+  function postYoutubeCommand(frame: HTMLIFrameElement, command: "playVideo" | "pauseVideo") {
+    if (!frame.contentWindow) return;
+    frame.contentWindow.postMessage(
+      JSON.stringify({
+        event: "command",
+        func: command,
+        args: []
+      }),
+      "https://www.youtube.com"
+    );
+  }
+
+  function sendYoutubeCommand(command: "playVideo" | "pauseVideo") {
+    const frame = playerFrameRef.current;
+    if (!frame) return;
+    postYoutubeCommand(frame, command);
+    // YouTube iframe API may miss the first postMessage right after load/source switch.
+    // Retry once after a short delay, and only when desired play state still matches.
+    if (ytbSyncTimerRef.current !== null) window.clearTimeout(ytbSyncTimerRef.current);
+    ytbSyncTimerRef.current = window.setTimeout(() => {
+      const expected = playingRef.current ? "playVideo" : "pauseVideo";
+      if (playerFrameRef.current === frame && command === expected) postYoutubeCommand(frame, command);
+      ytbSyncTimerRef.current = null;
+    }, YTB_SYNC_RETRY_MS);
+  }
+
   function onCanvasClick() {
     if (mode === "preview") {
-      setMode("immersive");
+      setModeWithTransition("immersive");
       if (!playing) togglePlay(true);
       return;
     }
@@ -233,7 +341,8 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     if (!embedUrl) return <p className="player-empty">当前源暂无链接</p>;
     return (
       <iframe
-        key={source}
+        key={`${source}-${sourceUrl ?? ""}`}
+        ref={playerFrameRef}
         src={embedUrl}
         width="100%"
         height="100%"
@@ -241,18 +350,39 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
         allow="autoplay; encrypted-media; picture-in-picture"
         allowFullScreen
         title={`${song.song_title}-${source}`}
+        onLoad={() => {
+          if (source === "youtube") {
+            sendYoutubeCommand(playing ? "playVideo" : "pauseVideo");
+          }
+        }}
       />
     );
   }
 
+  useEffect(() => {
+    if (source !== "youtube") return;
+    sendYoutubeCommand(playing ? "playVideo" : "pauseVideo");
+  }, [playing, source]);
+
+  useEffect(() => {
+    const syncFullscreen = () => setIsFullscreen(Boolean(currentFullscreenElement()));
+    syncFullscreen();
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    document.addEventListener("webkitfullscreenchange", syncFullscreen as EventListener);
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreen);
+      document.removeEventListener("webkitfullscreenchange", syncFullscreen as EventListener);
+    };
+  }, []);
+
   return (
-    <div className={`song-root mode-${mode} ${playing ? "is-playing" : ""} ${idle ? "is-idle" : ""} ${centerHover ? "center-hover" : ""}`}>
+    <div className={`song-root mode-${mode} ${modeSwitching ? "mode-switching" : ""} ${playing ? "is-playing" : ""} ${idle ? "is-idle" : ""} ${centerHover ? "center-hover" : ""}`}>
       <div className="global-ambient" style={{ backgroundImage: `url(${activeImage})` }} />
       <div className="global-ambient global-ambient-float" style={{ backgroundImage: `url(${activeImage})` }} />
       <div className="film-grain" />
 
       <header className="imm-ui imm-top">
-        <button className="icon-btn" onClick={() => setMode("preview")} title="Exit Immersive">
+        <button className="icon-btn" onClick={() => setModeWithTransition("preview")} title="Exit Immersive">
           <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M19 12H5M12 19l-7-7 7-7" />
           </svg>
@@ -261,7 +391,15 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
           <div className="imm-title">{song.song_title}</div>
           <div className="imm-sub">{song.subtitle ?? ""}</div>
         </div>
-        <div style={{ width: 44 }} />
+        <button className="icon-btn" onClick={() => void toggleTrueFullscreen()} title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}>
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
+            {isFullscreen ? (
+              <path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5" />
+            ) : (
+              <path d="M3 9V3h6M15 3h6v6M3 15v6h6M21 15v6h-6" />
+            )}
+          </svg>
+        </button>
       </header>
 
       <div id="app">
@@ -332,11 +470,21 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
               </svg>
               <span>{playing ? "Pause" : "Play Track"}</span>
             </button>
-            <button className="btn-secondary" onClick={() => setMode("immersive")}>
+            <button className="btn-secondary" onClick={() => setModeWithTransition("immersive")}>
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
               </svg>
               Immersive
+            </button>
+            <button className="btn-secondary" onClick={() => void toggleTrueFullscreen()}>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                {isFullscreen ? (
+                  <path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5" />
+                ) : (
+                  <path d="M3 9V3h6M15 3h6v6M3 15v6h6M21 15v6h-6" />
+                )}
+              </svg>
+              {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             </button>
           </div>
 

@@ -1,10 +1,11 @@
 import type { Collection, Db, Filter, WithId } from "mongodb";
 import { ObjectId } from "mongodb";
 import { getMongoClient } from "./mongo";
-import { parseSong, type OstSongItem, type SongSubmissionInput } from "./schema";
+import { parseSong, type OstSongItem, type SongStatus, type SongSubmissionInput } from "./schema";
 import { sampleSongs } from "./sample-data";
 import { isDuplicateSubmission } from "./submission-dedupe";
 import { buildSongQuery, filterSongs, type SongFilter } from "./song-utils";
+import { isReviewEnabled } from "./runtime-config";
 
 const DB_NAME = process.env.MONGODB_DB ?? "ost_hibiki";
 const COLLECTION = process.env.MONGODB_COLLECTION ?? "songs";
@@ -43,6 +44,24 @@ function parseNumericId(value: unknown): number | null {
     if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
   }
   return null;
+}
+
+/**
+ * 构建按歌曲 ID 查询的兼容条件：
+ * - 数字路由参数同时匹配 number/string，兼容历史库 id 混存；
+ * - 仍保留原始字符串匹配；
+ * - 若参数本身是合法 ObjectId，则附加 _id 匹配。
+ */
+function buildSongIdClauses(id: string): Filter<RawSongDoc>[] {
+  const clauses: Filter<RawSongDoc>[] = [];
+  const numericId = parseNumericId(id);
+  if (numericId) {
+    clauses.push({ id: numericId });
+    clauses.push({ id: String(numericId) });
+  }
+  clauses.push({ id });
+  if (ObjectId.isValid(id)) clauses.push({ _id: new ObjectId(id) });
+  return clauses;
 }
 
 async function ensureSongIdCounterAtLeast(db: Db, min: number): Promise<void> {
@@ -133,18 +152,50 @@ export async function getSongById(id: string): Promise<OstSongItem | null> {
 
   const db = client.db(DB_NAME);
   const collection = db.collection<RawSongDoc>(COLLECTION);
-  const clauses: Filter<RawSongDoc>[] = [];
-  const numericId = parseNumericId(id);
-  // 兼容历史库里 id 的 number/string 混存，避免 /song/1 查不到 id:"1"。
-  if (numericId) {
-    clauses.push({ id: numericId });
-    clauses.push({ id: String(numericId) });
-  }
-  clauses.push({ id });
-  if (ObjectId.isValid(id)) clauses.push({ _id: new ObjectId(id) });
-  const doc = await collection.findOne({ $or: clauses });
+  const doc = await collection.findOne({ $or: buildSongIdClauses(id) });
   if (!doc) return null;
   const normalized = await ensureMongoSongId(db, collection, doc);
+  return normalizeMongoDoc(normalized);
+}
+
+export async function querySongsByStatus(status: SongStatus, limit = 120): Promise<OstSongItem[]> {
+  const client = await getMongoClient();
+  if (!client) return sampleSongs.filter((song) => song.status === status).slice(0, limit);
+
+  const db = client.db(DB_NAME);
+  const collection = db.collection<RawSongDoc>(COLLECTION);
+  const docs = await collection.find({ status }).limit(limit).toArray();
+  const normalizedDocs: RawSongDoc[] = [];
+  for (const doc of docs) {
+    normalizedDocs.push(await ensureMongoSongId(db, collection, doc));
+  }
+  return normalizedDocs.map(normalizeMongoDoc);
+}
+
+export async function updateSongReviewFields(
+  id: string,
+  patch: {
+    status?: SongStatus;
+    media_urls?: OstSongItem["media_urls"];
+    img_urls?: string[];
+  }
+): Promise<OstSongItem | null> {
+  const client = await getMongoClient();
+  if (!client) return null;
+
+  const db = client.db(DB_NAME);
+  const collection = db.collection<RawSongDoc>(COLLECTION);
+  const updateSet: Partial<RawSongDoc> = {};
+  if (patch.status) updateSet.status = patch.status;
+  if (patch.media_urls) updateSet.media_urls = patch.media_urls;
+  if (patch.img_urls) updateSet.img_urls = patch.img_urls;
+  if (!Object.keys(updateSet).length) return null;
+
+  const result = await collection.findOneAndUpdate({ $or: buildSongIdClauses(id) }, { $set: updateSet }, { returnDocument: "after" });
+  if (!result) {
+    return null;
+  }
+  const normalized = await ensureMongoSongId(db, collection, result);
   return normalizeMongoDoc(normalized);
 }
 
@@ -180,10 +231,11 @@ export async function createPendingSong(
   }
 
   const id = await getNextSongId(db);
+  const status: SongStatus = isReviewEnabled() ? "pending" : "approved";
   await collection.insertOne({
     ...input,
     id,
-    status: "pending"
+    status
   } as RawSongDoc);
-  return { id, deduped: false, status: "pending" };
+  return { id, deduped: false, status };
 }

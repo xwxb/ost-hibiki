@@ -102,13 +102,15 @@ export function collectTags(subject: BangumiSubject): string[] {
 }
 
 export function mapBangumiToAutofill(subject: BangumiSubject, persons: BangumiRelatedPerson[]): BangumiAutofillPayload {
-  const songTitle = normalizeText(subject.name) || normalizeText(subject.name_cn);
+  const originalTitle = normalizeText(subject.name);
+  const localizedTitle = normalizeText(subject.name_cn);
+  const songTitle = localizedTitle || originalTitle;
   if (!songTitle) {
     throw new Error("Bangumi 条目缺少可用标题");
   }
 
-  const subtitle = normalizeText(subject.name_cn);
-  const safeSubtitle = subtitle && subtitle !== songTitle ? subtitle : undefined;
+  const subtitleAlt = songTitle === localizedTitle ? originalTitle : localizedTitle;
+  const safeSubtitle = subtitleAlt && subtitleAlt !== songTitle ? `${songTitle} / ${subtitleAlt}` : undefined;
 
   return {
     bangumi_id: subject.id,
