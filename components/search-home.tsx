@@ -15,7 +15,6 @@ import {
 } from "@/lib/local-storage";
 import { usePreloadImages } from "@/lib/image-preloader";
 import { handleImgError } from "@/lib/image-fallback";
-import { isPublicAdminModeEnabled } from "@/lib/runtime-config";
 import { parseSong, songSubmissionSchema, type OstSongItem } from "@/lib/schema";
 import { filterSongs, mergeSongs } from "@/lib/song-utils";
 import { ImageUrlListEditor } from "./image-url-list-editor";
@@ -82,7 +81,6 @@ function toAdminDraft(song: OstSongItem): AdminDraft {
 
 const PAGE_SIZE = 9;
 const DEBOUNCE_MS = 300;
-const ADMIN_MODE_ENABLED = isPublicAdminModeEnabled();
 const ADMIN_GLOBAL_KEY = "__global";
 
 function normalizeAdminMediaUrls(mediaUrls: Record<SourceField, string>): Record<SourceField, string> {
@@ -165,7 +163,7 @@ function safeErrorMessage(status: number): string {
   return "发布失败，请检查后重试。";
 }
 
-export function SearchHome() {
+export function SearchHome({ adminMode }: { adminMode: boolean }) {
   const [query, setQuery] = useState("");
   const [remoteSongs, setRemoteSongs] = useState<OstSongItem[]>([]);
   const [localSongs, setLocalSongs] = useState<OstSongItem[]>([]);
@@ -210,7 +208,7 @@ export function SearchHome() {
   }, []);
 
   useEffect(() => {
-    if (!ADMIN_MODE_ENABLED) return;
+    if (!adminMode) return;
     void loadAdminPendingSongs();
   }, []);
 
@@ -491,7 +489,7 @@ export function SearchHome() {
   }
 
   async function loadAdminPendingSongs() {
-    if (!ADMIN_MODE_ENABLED) return;
+    if (!adminMode) return;
     setAdminFeedback((prev) => ({ ...prev, [ADMIN_GLOBAL_KEY]: "审核列表加载中..." }));
     try {
       const response = await fetch("/api/admin/songs?status=pending", { cache: "no-store" });
@@ -818,7 +816,7 @@ export function SearchHome() {
           </div>
         ) : null}
 
-        {ADMIN_MODE_ENABLED ? (
+        {adminMode ? (
           <section className="admin-panel">
             <div className="admin-panel-head">
               <h3>审核模式（Pending）</h3>

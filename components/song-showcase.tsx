@@ -113,7 +113,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   useEffect(() => {
     playingRef.current = playing;
   }, [playing]);
-  const frameMotionKey = `${frameIndex}-${activeImage}`;
+  const frameMotionKey = `${mode}-${frameIndex}-${activeImage}`;
   const titleParts = splitSongTitle(song.song_title);
   const sourceUrl =
     source === "youtube"
@@ -256,13 +256,21 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   }
 
   async function enterTrueFullscreen() {
-    const target = document.documentElement as FullscreenElement;
-    if (target.requestFullscreen) {
-      await target.requestFullscreen();
-      return;
-    }
-    if (target.webkitRequestFullscreen) {
-      await target.webkitRequestFullscreen();
+    // Try document.documentElement first; fall back to body (Safari sometimes rejects documentElement).
+    const candidates = [document.documentElement, document.body] as FullscreenElement[];
+    for (const target of candidates) {
+      try {
+        if (target.requestFullscreen) {
+          await target.requestFullscreen();
+          return;
+        }
+        if (target.webkitRequestFullscreen) {
+          await target.webkitRequestFullscreen();
+          return;
+        }
+      } catch {
+        // Silently try the next candidate.
+      }
     }
   }
 

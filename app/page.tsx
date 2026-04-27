@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SearchHome } from "@/components/search-home";
+import { isAdminModeEnabled } from "@/lib/runtime-config";
 
 export const metadata: Metadata = {
   title: "OST Hibiki",
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function HomePage() {
-  return <SearchHome />;
+  return <SearchHome adminMode={isAdminModeEnabled()} />;
 }

@@ -11,7 +11,3 @@ export function isReviewEnabled(): boolean {
 export function isAdminModeEnabled(): boolean {
   return isTruthyEnvValue(process.env.ADMIN_MODE_ENABLED);
 }
-
-export function isPublicAdminModeEnabled(): boolean {
-  return isTruthyEnvValue(process.env.NEXT_PUBLIC_ADMIN_MODE_ENABLED);
-}
