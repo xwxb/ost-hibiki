@@ -15,6 +15,7 @@ import {
 } from "@/lib/local-storage";
 import { usePreloadImages } from "@/lib/image-preloader";
 import { handleImgError } from "@/lib/image-fallback";
+import { isPublicAdminModeEnabled } from "@/lib/runtime-config";
 import { parseSong, songSubmissionSchema, type OstSongItem } from "@/lib/schema";
 import { filterSongs, mergeSongs } from "@/lib/song-utils";
 import { ImageUrlListEditor } from "./image-url-list-editor";
@@ -81,7 +82,7 @@ function toAdminDraft(song: OstSongItem): AdminDraft {
 
 const PAGE_SIZE = 9;
 const DEBOUNCE_MS = 300;
-const ADMIN_MODE_ENABLED = process.env.NEXT_PUBLIC_ADMIN_MODE_ENABLED === "1";
+const ADMIN_MODE_ENABLED = isPublicAdminModeEnabled();
 const ADMIN_GLOBAL_KEY = "__global";
 
 function normalizeAdminMediaUrls(mediaUrls: Record<SourceField, string>): Record<SourceField, string> {
