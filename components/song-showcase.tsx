@@ -124,8 +124,8 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
 
   const embedUrl = useMemo(() => {
     if (!sourceUrl) return null;
-    return buildEmbedUrl(source, sourceUrl, source === "youtube" && playing);
-  }, [playing, source, sourceUrl]);
+    return buildEmbedUrl(source, sourceUrl);
+  }, [source, sourceUrl]);
 
   useEffect(() => {
     document.title = `${song.song_title} | OST Hibiki`;
@@ -301,6 +301,8 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     const frame = playerFrameRef.current;
     if (!frame) return;
     postYoutubeCommand(frame, command);
+    // YouTube iframe API may miss the first postMessage right after load/source switch.
+    // Retry once after a short delay, and only when desired play state still matches.
     if (ytbSyncTimerRef.current !== null) window.clearTimeout(ytbSyncTimerRef.current);
     ytbSyncTimerRef.current = window.setTimeout(() => {
       const expected = playingRef.current ? "playVideo" : "pauseVideo";
