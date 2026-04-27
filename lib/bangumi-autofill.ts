@@ -110,7 +110,7 @@ export function mapBangumiToAutofill(subject: BangumiSubject, persons: BangumiRe
   }
 
   const subtitleAlt = songTitle === localizedTitle ? originalTitle : localizedTitle;
-  const safeSubtitle = subtitleAlt && subtitleAlt !== songTitle ? `${songTitle} / ${subtitleAlt}` : songTitle;
+  const safeSubtitle = subtitleAlt && subtitleAlt !== songTitle ? `${songTitle} / ${subtitleAlt}` : undefined;
 
   return {
     bangumi_id: subject.id,

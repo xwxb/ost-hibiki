@@ -359,7 +359,7 @@ export function SearchHome() {
       setForm((current) => ({
         ...current,
         bangumi_id: String(payload.bangumi_id),
-        song_title: current.song_title,
+        song_title: current.song_title.trim() ? current.song_title : payload.song_title,
         subtitle: current.subtitle.trim() ? current.subtitle : (payload.subtitle ?? payload.song_title ?? ""),
         composer: current.composer.trim() ? current.composer : (payload.composer ?? ""),
         tags: current.tags.trim() ? current.tags : payload.tags.join(",")

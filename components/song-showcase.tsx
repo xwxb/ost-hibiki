@@ -94,6 +94,7 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   const modeSwitchTimerRef = useRef<number | null>(null);
   const ytbSyncTimerRef = useRef<number | null>(null);
   const idleStateRef = useRef(false);
+  const playingRef = useRef(playing);
   const playerFrameRef = useRef<HTMLIFrameElement | null>(null);
 
   useCarouselPreload(song.img_urls, frameIndex);
@@ -108,6 +109,10 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
   useEffect(() => {
     idleStateRef.current = idle;
   }, [idle]);
+
+  useEffect(() => {
+    playingRef.current = playing;
+  }, [playing]);
   const frameMotionKey = `${frameIndex}-${activeImage}`;
   const titleParts = splitSongTitle(song.song_title);
   const sourceUrl =
@@ -119,8 +124,8 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
 
   const embedUrl = useMemo(() => {
     if (!sourceUrl) return null;
-    return buildEmbedUrl(source, sourceUrl);
-  }, [source, sourceUrl]);
+    return buildEmbedUrl(source, sourceUrl, source === "youtube" && playing);
+  }, [playing, source, sourceUrl]);
 
   useEffect(() => {
     document.title = `${song.song_title} | OST Hibiki`;
@@ -298,7 +303,8 @@ export function SongShowcase({ song }: { song: OstSongItem }) {
     postYoutubeCommand(frame, command);
     if (ytbSyncTimerRef.current !== null) window.clearTimeout(ytbSyncTimerRef.current);
     ytbSyncTimerRef.current = window.setTimeout(() => {
-      if (playerFrameRef.current === frame) postYoutubeCommand(frame, command);
+      const expected = playingRef.current ? "playVideo" : "pauseVideo";
+      if (playerFrameRef.current === frame && command === expected) postYoutubeCommand(frame, command);
       ytbSyncTimerRef.current = null;
     }, YTB_SYNC_RETRY_MS);
   }
