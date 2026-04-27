@@ -109,8 +109,8 @@ export function mapBangumiToAutofill(subject: BangumiSubject, persons: BangumiRe
     throw new Error("Bangumi 条目缺少可用标题");
   }
 
-  const subtitleCandidate = songTitle === localizedTitle ? originalTitle : localizedTitle;
-  const safeSubtitle = subtitleCandidate && subtitleCandidate !== songTitle ? subtitleCandidate : undefined;
+  const subtitleAlt = songTitle === localizedTitle ? originalTitle : localizedTitle;
+  const safeSubtitle = subtitleAlt && subtitleAlt !== songTitle ? `${songTitle} / ${subtitleAlt}` : songTitle;
 
   return {
     bangumi_id: subject.id,
